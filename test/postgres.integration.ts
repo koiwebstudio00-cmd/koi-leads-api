@@ -30,6 +30,7 @@ before(async()=>{
  await db.query(`do $$begin if not exists(select 1 from pg_roles where rolname='anon') then create role anon;end if;if not exists(select 1 from pg_roles where rolname='authenticated') then create role authenticated;end if;end$$;
  create schema auth;create table auth.users(id uuid primary key);create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;grant usage on schema auth,public to anon,authenticated;`)
  for(const file of (await readdir('supabase/migrations')).sort())await db.query(await readFile('supabase/migrations/'+file,'utf8'))
+ await db.query('revoke usage on schema auth from koi_campaign_owner')
  await db.query('insert into auth.users values($1),($2)',[user,outsider])
  await db.query("insert into koi_workspaces(id,name) values($1,'Koi')",[workspace])
  await db.query("insert into koi_workspace_members(workspace_id,user_id,role) values($1,$2,'admin')",[workspace,user])

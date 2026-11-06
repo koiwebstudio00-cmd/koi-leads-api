@@ -21,6 +21,7 @@ Ya aplicadas en el proyecto Supabase de Koi `avqhjbrcbgqhelfkcist` el 6/11/2026:
 
 - `koi_campaigns_queue`
 - `koi_campaign_immediate_optout`
+- `koi_campaign_jwt_context` (compatible con el esquema Auth administrado de Supabase)
 
 No volver a pegar las migraciones sobre esa base. Las tablas de importación y sus datos se conservan. Las credenciales del worker y webhook usan roles separados sin acceso directo a tablas; inicialmente esos roles están sin LOGIN.
 

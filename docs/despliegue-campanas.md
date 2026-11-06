@@ -13,7 +13,16 @@ API y worker se despliegan desde **koiwebstudio00-cmd/koi-leads-api**, como dos 
 - Recepción autenticada de estados, deduplicación, entrega/lectura sin retroceder y bajas explícitas antes de responder al webhook.
 - Panel con actualización cada 3 segundos, destinatarios, actividad inicial y exportación CSV.
 
-La presencia del código o de las tablas **no significa que el worker esté ejecutándose**. Para envíos reales hacen falta las credenciales y los pasos siguientes.
+## Estado desplegado al 6/11/2026
+
+- Frontend y API actualizados desde sus repositorios separados.
+- `koi-worker` creado en Dokploy y desplegado con `Dockerfile.worker`: contenedor saludable y latido confirmado en Supabase.
+- Credenciales limitadas de worker y webhook provisionadas, probadas y cargadas en los servicios correspondientes. La URI administrativa no se cargó en Dokploy.
+- Webhook habilitado en `koi-01`, con los tres eventos y header privado indicados abajo. Su configuración fue leída nuevamente desde Evolution para verificarla.
+- Endpoint comprobado: 401 sin secreto, 200 para un evento vacío autenticado y 403 para una instancia distinta. Estas pruebas no enviaron mensajes ni simularon estados de destinatarios.
+- **`KOI_SEND_ENABLED=false`**. No se hizo todavía un envío real desde este worker; falta la prueba controlada del apartado 6 y verificar sus recibos de entrega/lectura.
+
+Los apartados 1 a 5 documentan la instalación ya realizada. **No volver a generar credenciales ni crear otro worker** para esta instalación.
 
 ## 1. Migraciones
 
@@ -23,7 +32,7 @@ Ya aplicadas en el proyecto Supabase de Koi `avqhjbrcbgqhelfkcist` el 6/11/2026:
 - `koi_campaign_immediate_optout`
 - `koi_campaign_jwt_context` (compatible con el esquema Auth administrado de Supabase)
 
-No volver a pegar las migraciones sobre esa base. Las tablas de importación y sus datos se conservan. Las credenciales del worker y webhook usan roles separados sin acceso directo a tablas; inicialmente esos roles están sin LOGIN.
+No volver a pegar las migraciones sobre esa base. Las tablas de importación y sus datos se conservan. Las credenciales del worker y webhook usan roles separados sin acceso directo a tablas; las migraciones los crean sin LOGIN y la provisión ya realizada habilitó sus credenciales limitadas.
 
 ## 2. Generar las credenciales una vez
 

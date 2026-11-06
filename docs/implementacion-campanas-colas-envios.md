@@ -1,12 +1,12 @@
 # Implementación de campañas, colas y envíos de Koi Leads
 
-Actualización: 6 de noviembre de 2026. **MVP implementado y probado en código; activación del worker/webhook pendiente de credenciales de runtime.**
+Actualización: 6 de noviembre de 2026. **MVP implementado y desplegado; worker saludable y webhook conectado. Envíos reales deshabilitados hasta la prueba controlada.**
 
 Esta es la especificación de diseño original. El alcance entregado, las diferencias y los pasos operativos están en [despliegue-campanas.md](despliegue-campanas.md), que prevalece sobre los tiempos futuros del plan.
 
 Implementado: campañas, selección, variables y vista previa; cola PostgreSQL y worker Node; límites/horarios; pausa/reanudación/cancelación; estados por destinatario; resultados inciertos sin reenvío automático; webhooks autenticados, bajas y polling del panel. Migraciones aplicadas en Koi. Verificados 35 tests del backend, 6 pruebas de PostgreSQL real, 78 tests del frontend y 11 recorridos de navegador (incluidas importaciones y Evolution).
 
-No se ha realizado un envío real desde este nuevo worker. La configuración en Dokploy, webhook por instancia y prueba con teléfono propio son los pasos operativos pendientes. Retención automática de eventos, inbox y reintentos manuales de fallidos no forman parte de esta entrega.
+No se ha realizado un envío real desde este nuevo worker. La configuración en Dokploy y el webhook por instancia ya están completados. Queda la prueba con teléfono propio y sus confirmaciones de entrega/lectura antes de habilitar el uso normal. Retención automática de eventos, inbox y reintentos manuales de fallidos no forman parte de esta entrega.
 
 ## 1. Objetivo y punto de partida
 

@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { randomUUID } from 'node:crypto'
+import { campaignRoute } from './campaigns/routes.ts'
 import { z } from 'zod'
 import { ApiError, type Authorize } from './store.ts'
 import { parseInWorker, parseOptionsSchema } from './import-service.ts'
@@ -29,7 +30,7 @@ async function readBytes(request: IncomingMessage, maxBytes: number) {
   return Buffer.concat(chunks)
 }
 
-export function createApp(options: { authorize: Authorize; origin: string; evolution?: EvolutionConnection }) {
+export function createApp(options: { authorize: Authorize; origin: string; evolution?: EvolutionConnection; webhook?: (header: string | string[] | undefined, body: () => Promise<unknown>) => Promise<unknown> }) {
   let uploads = 0
   const server = createServer(async (request, response) => {
     const requestId = randomUUID()
@@ -49,7 +50,11 @@ export function createApp(options: { authorize: Authorize; origin: string; evolu
       }
       const url = new URL(request.url ?? '/', 'http://localhost')
       const path = url.pathname
-      if (path === '/health' && request.method === 'GET') { send(200, { status: 'ok', service: 'koi-api' }); return }
+      if (path === '/health' && request.method === 'GET') { send(200, { status: 'ok', service: 'koi-api', capabilities: ['imports', 'campaigns-v1'] }); return }
+      if (path === '/api/webhooks/evolution' && request.method === 'POST') {
+        if (!options.webhook) throw new ApiError(503, 'Webhook no configurado.')
+        send(200, await options.webhook(request.headers['x-koi-webhook-secret'], () => readBody(request, 262144))); return
+      }
       const token = /^Bearer ([^\s]+)$/.exec(request.headers.authorization ?? '')?.[1]
       if (!token) throw new ApiError(401, 'Ingresá para continuar.')
       const store = await options.authorize(token)
@@ -57,6 +62,10 @@ export function createApp(options: { authorize: Authorize; origin: string; evolu
         if (!options.evolution) { send(200, { state: 'not_configured', instanceName: null, checkedAt: null }); return }
         if (store.membership.workspace_id !== options.evolution.workspaceId) throw new ApiError(403, 'Esta conexión no pertenece a tu espacio.')
         send(200, await options.evolution.status()); return
+      }
+      if (path === '/api/campaigns' || path.startsWith('/api/campaigns/')) {
+        if (!store.campaigns) throw new ApiError(503, 'Campañas no disponibles.')
+        const result = await campaignRoute(request, url, store.campaigns, () => readBody(request, 524288)); send(result.status, result.data); return
       }
       if (path === '/api/workspace' && request.method === 'GET') { send(200, store.membership); return }
       if (path === '/api/imports' && request.method === 'GET') { send(200,{ imports:await store.imports.recent() }); return }

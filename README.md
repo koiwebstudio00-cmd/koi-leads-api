@@ -9,7 +9,11 @@ Backend independiente de Koi Leads, con Node.js 24 y TypeScript. Este repositori
 - Importación CSV/XLSX: vista previa, preparación guardada, edición, selección, deduplicación y confirmación transaccional e idempotente. Límite de 5.000 filas y 10 MiB.
 - Estado de la conexión Evolution desde el servidor, con clave privada, timeout y errores sanitizados.
 
-Las campañas, la cola de envíos, su worker y los webhooks de Evolution todavía están pendientes. `src/import-worker.ts` analiza archivos fuera del hilo principal; no es un worker de campañas. No hay endpoints de envío de WhatsApp.
+- Campañas de texto, selección, variables, vista previa y arranque idempotente.
+- Cola PostgreSQL, worker independiente, horarios/límites persistentes y pausa/reanudación/cancelación.
+- Webhooks autenticados, entrega/lectura, bajas y recuperación conservadora de envíos inciertos.
+
+Para activar el worker y el webhook en Dokploy: **[guía de despliegue de campañas](docs/despliegue-campanas.md)**. El código no habilita envíos por sí solo; `KOI_SEND_ENABLED` comienza en `false`. `src/import-worker.ts` sigue siendo exclusivo del análisis de archivos; el nuevo proceso de campañas es `src/worker.ts`.
 
 ## Desarrollo
 

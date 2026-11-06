@@ -1,0 +1,152 @@
+# Activar campañas de Koi en Dokploy
+
+API y worker se despliegan desde **koiwebstudio00-cmd/koi-leads-api**, como dos Applications. El frontend sigue en su repo independiente. No se usa n8n ni una nueva instalación de Redis.
+
+## Qué está implementado
+
+- Borradores con nombre, base y selección de contactos; texto y variables opcionales.
+- Vista previa en servidor y confirmación vinculada al contenido revisado.
+- Snapshot inmutable de teléfono/texto por destinatario y arranque idempotente.
+- Cola PostgreSQL, un envío en vuelo por instancia, horarios de Argentina y límites persistentes por minuto/hora/día.
+- Worker independiente, pausa/reanudación/cancelación y recuperación de reservas al reiniciar.
+- Si un envío pudo haber salido pero no hay respuesta concluyente, se pausa y queda **por revisar**. Nunca se repite automáticamente ese POST.
+- Recepción autenticada de estados, deduplicación, entrega/lectura sin retroceder y bajas explícitas antes de responder al webhook.
+- Panel con actualización cada 3 segundos, destinatarios, actividad inicial y exportación CSV.
+
+La presencia del código o de las tablas **no significa que el worker esté ejecutándose**. Para envíos reales hacen falta las credenciales y los pasos siguientes.
+
+## 1. Migraciones
+
+Ya aplicadas en el proyecto Supabase de Koi `avqhjbrcbgqhelfkcist` el 6/11/2026:
+
+- `koi_campaigns_queue`
+- `koi_campaign_immediate_optout`
+
+No volver a pegar las migraciones sobre esa base. Las tablas de importación y sus datos se conservan. Las credenciales del worker y webhook usan roles separados sin acceso directo a tablas; inicialmente esos roles están sin LOGIN.
+
+## 2. Generar las credenciales una vez
+
+En **tu terminal local**, dentro del repo del backend y con Node 24:
+
+```sh
+cd /Users/dev0/koi/koi-leads-api
+npm ci
+```
+
+Crear un archivo local `.env.provision` (está excluido de Git) con:
+
+```env
+KOI_ADMIN_DATABASE_URL=postgresql://postgres.avqhjbrcbgqhelfkcist:CONTRASENA@HOST_SESSION_POOLER:5432/postgres
+EVOLUTION_INSTANCE_NAME=koi-01
+KOI_EVOLUTION_WORKSPACE_ID=727df779-b2eb-4485-9670-f1f7eb12e30e
+```
+
+Copiar el host y URI correctos desde **Supabase → Connect → Session pooler** del proyecto Koi. Usar la contraseña de PostgreSQL, no la publishable key ni service_role. Si tiene caracteres especiales, codificarlos para una URI. La conexión directa también sirve cuando el equipo/VPS tiene conectividad IPv6. No usar Transaction Pooler/puerto 6543.
+
+Ejecutar:
+
+```sh
+node --env-file=.env.provision scripts/provision-campaigns.ts
+```
+
+El script crea `.local-campaigns/worker.env` y `.local-campaigns/api-webhook.env`, con permisos de archivo privados. No imprime secretos, no modifica contactos y se niega a sobrescribir archivos o roles ya activados. No subir esos archivos a Git ni pegarlos en el chat. Eliminar `.env.provision` después de completar la provisión; esa contraseña administrativa **no debe quedar en Dokploy**.
+
+Si Node rechaza la cadena TLS, descargar el certificado raíz del proyecto desde Supabase y agregar `KOI_DATABASE_CA_FILE=/ruta/al/certificado.crt`; montar ese mismo certificado en los contenedores. No desactivar la verificación TLS.
+
+## 3. Configurar la API existente
+
+En Dokploy → `koi-api` → Environment:
+
+1. Conservar las variables actuales de Supabase, CORS y Evolution.
+2. Agregar las dos líneas de `.local-campaigns/api-webhook.env`.
+3. Save y Deploy desde GitHub, Dockerfile `Dockerfile`, contexto `.`.
+
+El endpoint `https://api-leads.koistudio.com.ar/health` debe incluir `campaigns-v1`. Esto confirma versión y proceso; no prueba la conexión del worker ni entrega mensajes.
+
+## 4. Crear el worker
+
+Dentro del mismo proyecto de Dokploy:
+
+1. **Create Service → Application**, nombre `koi-worker`.
+2. GitHub → **koiwebstudio00-cmd/koi-leads-api**, branch `main`, build path `/`.
+3. Build Type **Dockerfile**, Docker File **Dockerfile.worker**, Context Path **.**, build stage vacío.
+4. Environment: copiar `.local-campaigns/worker.env` y agregar:
+
+```env
+EVOLUTION_PUBLIC_URL=https://evoapi.inmobiliarialyc.com.ar
+EVOLUTION_API_KEY=LA_MISMA_CLAVE_PRIVADA_QUE_USA_KOI_API
+```
+
+5. Mantener `KOI_SEND_ENABLED=false` durante la primera comprobación.
+6. **Una réplica**, sin dominio, sin puertos públicos y sin volumen de datos. La cola vive en Supabase. Usar reinicio automático y empezar con límite de memoria de 256 MiB; medir y ajustar con carga.
+7. Deploy. El log debe mostrar `worker_started` con `sendingEnabled:false`, sin errores repetidos `worker_cycle_failed`.
+
+El healthcheck del contenedor verifica el latido local de un ciclo exitoso. El panel también lee el latido persistido en Supabase. Al habilitar envíos, copiar la misma clave Evolution que ya tiene la API; no generar otra ni cambiar la instancia conectada.
+
+## 5. Webhook por instancia en Evolution
+
+Configurar **solo la instancia `koi-01`** con:
+
+- URL: `https://api-leads.koistudio.com.ar/api/webhooks/evolution`
+- Enabled: sí
+- Webhook by events: no
+- Base64: no
+- Header `X-Koi-Webhook-Secret`: el valor de `KOI_EVOLUTION_WEBHOOK_SECRET` generado para la API.
+- Eventos: `MESSAGES_UPDATE`, `MESSAGES_UPSERT`, `CONNECTION_UPDATE`.
+
+Evolution 2.3.7 admite headers por instancia. Si el Manager no permite cargar el header, usar `POST /webhook/set/koi-01` con la API key de Evolution en header `apikey` y este cuerpo (reemplazar el secreto localmente):
+
+```json
+{
+  "webhook": {
+    "enabled": true,
+    "url": "https://api-leads.koistudio.com.ar/api/webhooks/evolution",
+    "headers": { "X-Koi-Webhook-Secret": "SECRETO_GENERADO" },
+    "byEvents": false,
+    "base64": false,
+    "events": ["MESSAGES_UPDATE", "MESSAGES_UPSERT", "CONNECTION_UPDATE"]
+  }
+}
+```
+
+No poner el secreto en la URL. La API responde 401 antes de leer el cuerpo si falta/no coincide el header, y 503 si todavía no se configuró la recepción.
+
+## 6. Prueba controlada y activación
+
+1. Importar una base con **un teléfono propio**, consentimiento y evidencia de prueba.
+2. Crear campaña, elegir ese único contacto y un texto reconocible; revisar mensaje y horario.
+3. Confirmar: debe quedar **En cola** y el panel indicar que el proceso está conectado con envíos deshabilitados.
+4. En `koi-worker`, cambiar a `KOI_SEND_ENABLED=true`, Save y Deploy.
+5. Verificar una única recepción en el teléfono, `Aceptado por Evolution` en Koi y luego entrega/lectura mediante webhook. La lectura depende de la configuración de WhatsApp del receptor.
+6. Probar pausa y reanudación con dos números propios. Cerrar la pestaña y volver a abrir: el avance debe persistir.
+7. Si se interrumpe el envío, revisar el chat antes de usar **Revisar resultado → cierre sin reenvío**. Solo admin puede resolverlo.
+
+Topes iniciales del servidor: mínimo 30 s entre mensajes, máximo 2/min, 60/h y 100/día local. Se usa el límite más restrictivo entre servidor y campaña. Son controles de carga y operación; no garantizan evitar bloqueos de WhatsApp.
+
+## Operación y límites de esta entrega
+
+- Texto, una instancia y una campaña activa a la vez. Las pausadas también ocupan ese lugar.
+- No hay reintento automático de POST ambiguos ni de destinatarios fallidos. Se preserva el resultado para revisión.
+- Solo se envía a contactos con consentimiento confirmado y sin bajas. Las exclusiones se revisan nuevamente justo antes del despacho.
+- Bajas reconocidas: `baja`, `stop`, `no me contacten`, `no me escriban más` / `mas`, en mensajes entrantes con teléfono inequívoco (`@s.whatsapp.net`). Los JID `@lid` no se convierten a números por conjetura; requieren revisión externa. No hay inbox/respuestas generales en esta versión.
+- Historial en pantalla: primeros 100 eventos; API con cursor `after` para consultar el resto. Exportación de estado de hasta 5.000 destinatarios.
+- Los recibos sin asociación quedan pendientes para tolerar que lleguen antes de la respuesta HTTP. Falta una política automática de retención de esos eventos y del historial; monitorear crecimiento.
+- Vista previa aproximada de texto/formato de WhatsApp, no plantilla oficial de Meta ni reproducción idéntica en todos los dispositivos.
+- Secuencias, agenda y disponibilidad continúan fuera de este MVP.
+
+## Verificaciones de desarrollo
+
+`npm run verify`: tipos y pruebas unitarias, importaciones y autorización.
+
+Para probar competencia real, usar PostgreSQL 17 exclusivamente local en `127.0.0.1:55439` (el test crea y elimina su propia base):
+
+```sh
+docker run --name koi-campaign-pg -d -p 127.0.0.1:55439:5432 -e POSTGRES_PASSWORD=koi_local_test_only postgres:17-alpine
+npm run test:postgres
+```
+
+No ejecutar dos suites PostgreSQL en paralelo: crean roles de prueba con nombres fijos dentro de ese contenedor local. Se probaron dos consumidores, reservas vencidas, resultado incierto, pausa/cancelación durante despacho, límites tras reinicio, recibos fuera de orden y bajas sin worker.
+
+Desde el repo del front, `KOI_API_REPOSITORY=/Users/dev0/koi/koi-leads-api npm run test:e2e` usa la API local con Auth sintética. No envía mensajes reales.
+
+Referencias verificadas: [Evolution 2.3.7](https://github.com/EvolutionAPI/evolution-api/tree/2.3.7), [conexiones Supabase](https://supabase.com/docs/guides/database/connecting-to-postgres), [bloqueos PostgreSQL](https://www.postgresql.org/docs/17/sql-select.html).

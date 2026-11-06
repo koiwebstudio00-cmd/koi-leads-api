@@ -35,7 +35,9 @@ async function draft(tx:Transaction,id:string):Promise<ImportDraft> {
   if (!row) throw new ApiError(404,'Importación no encontrada.')
   return { ...row.payload,id:row.id,status:row.status,result:row.result,choices:row.choices,revision:row.revision }
 }
+await db.query('insert into koi_private.senders(workspace_id,instance) values($1,$2)',[workspace,'test-only'])
 const store:UserStore = {
+  campaigns:(action,data) => query(async tx => (await tx.query<{result:unknown}>('select koi_campaign_command($1,$2) as result',[action,JSON.stringify(data)])).rows[0]!.result),
   userId:user,membership:{ workspace_id:workspace,workspace_name:'Estudio Koi',role:'admin' },
   list:(page,search) => query(async tx => ({ lists:(await tx.query<LeadList>('select * from koi_lead_lists where name ilike $1 order by created_at desc,id desc limit 24 offset $2',[`%${search}%`,(page-1)*24])).rows,total:Number((await tx.query<{ n:number }>('select count(*) as n from koi_lead_lists where name ilike $1',[`%${search}%`])).rows[0]!.n) })),
   create:(input,key) => query(async tx => (await tx.query<LeadList>('insert into koi_lead_lists(workspace_id,name,description,request_id) values($1,$2,$3,$4) returning *',[workspace,input.name,input.description,key])).rows[0]!),

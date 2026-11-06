@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
+import { createCampaignStore } from './campaigns/store.ts'
+import type { CampaignCommand } from './campaigns/contracts.ts'
 import { z } from 'zod'
 import { createImportStore, type ImportStore } from './import-store.ts'
 
@@ -12,6 +14,7 @@ export type LeadList = { id: string; name: string; description: string; created_
 export type ListInput = { name: string; description: string }
 export type ListPage = { lists: LeadList[]; total: number }
 export type UserStore = {
+  campaigns?: CampaignCommand
   imports: ImportStore
   userId: string
   membership: Membership
@@ -53,6 +56,7 @@ export function createAuthorizer(url: string, publishableKey: string): Authorize
     const record = z.object({ workspace_id: z.uuid(), role: z.enum(['admin', 'operator']), koi_workspaces: z.object({ name: z.string() }) }).parse(data[0])
     const membership: Membership = { workspace_id: record.workspace_id, role: record.role, workspace_name: record.koi_workspaces.name }
     return {
+      campaigns: createCampaignStore(client),
       imports: createImportStore(client, membership.workspace_id, auth.user.id, databaseError),
       userId: auth.user.id,
       membership,

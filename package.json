@@ -11,12 +11,15 @@
     "start": "node --env-file-if-exists=.env src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --test test/*.test.ts",
-    "verify": "npm run typecheck && npm test"
+    "verify": "npm run typecheck && npm test",
+    "worker": "node --env-file-if-exists=.env src/worker.ts",
+    "test:postgres": "node --test test/postgres.integration.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.111.0",
     "fflate": "0.8.3",
     "papaparse": "5.7.0",
+    "pg": "8.23.1",
     "read-excel-file": "9.3.14",
     "saxen": "11.1.0",
     "zod": "4.6.7"
@@ -25,6 +28,7 @@
     "@electric-sql/pglite": "0.5.15",
     "@types/node": "24.13.3",
     "@types/papaparse": "5.5.2",
+    "@types/pg": "8.23.1",
     "typescript": "6.0.3"
   }
 }

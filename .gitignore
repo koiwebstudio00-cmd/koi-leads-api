@@ -8,3 +8,5 @@ coverage/
 .DS_Store
 supabase/.temp/
 supabase/.branches/
+
+.local-campaigns/

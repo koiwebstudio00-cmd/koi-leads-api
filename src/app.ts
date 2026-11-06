@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { randomUUID } from 'node:crypto'
+import type { WhatsAppManager } from './whatsapp.ts'
 import { campaignRoute } from './campaigns/routes.ts'
 import { z } from 'zod'
 import { ApiError, type Authorize } from './store.ts'
@@ -30,7 +31,7 @@ async function readBytes(request: IncomingMessage, maxBytes: number) {
   return Buffer.concat(chunks)
 }
 
-export function createApp(options: { authorize: Authorize; origin: string; evolution?: EvolutionConnection; webhook?: (header: string | string[] | undefined, body: () => Promise<unknown>) => Promise<unknown> }) {
+export function createApp(options: { authorize: Authorize; origin: string; whatsapp?: WhatsAppManager; evolution?: EvolutionConnection; webhook?: (header: string | string[] | undefined, body: () => Promise<unknown>) => Promise<unknown> }) {
   let uploads = 0
   const server = createServer(async (request, response) => {
     const requestId = randomUUID()
@@ -50,7 +51,7 @@ export function createApp(options: { authorize: Authorize; origin: string; evolu
       }
       const url = new URL(request.url ?? '/', 'http://localhost')
       const path = url.pathname
-      if (path === '/health' && request.method === 'GET') { send(200, { status: 'ok', service: 'koi-api', capabilities: ['imports', 'campaigns-v1'] }); return }
+      if (path === '/health' && request.method === 'GET') { send(200, { status: 'ok', service: 'koi-api', capabilities: ['imports', 'campaigns-v1', 'whatsapp-instances-v1'] }); return }
       if (path === '/api/webhooks/evolution' && request.method === 'POST') {
         if (!options.webhook) throw new ApiError(503, 'Webhook no configurado.')
         send(200, await options.webhook(request.headers['x-koi-webhook-secret'], () => readBody(request, 262144))); return
@@ -62,6 +63,21 @@ export function createApp(options: { authorize: Authorize; origin: string; evolu
         if (!options.evolution) { send(200, { state: 'not_configured', instanceName: null, checkedAt: null }); return }
         if (store.membership.workspace_id !== options.evolution.workspaceId) throw new ApiError(403, 'Esta conexión no pertenece a tu espacio.')
         send(200, await options.evolution.status()); return
+      }
+      if (path === '/api/integrations/evolution/instances' || path.startsWith('/api/integrations/evolution/instances/')) {
+        if (!options.whatsapp) throw new ApiError(503, 'Gestión de WhatsApp no configurada.')
+        const match = /^\/api\/integrations\/evolution\/instances(?:\/([^/]+)\/(connect|restart|disconnect))?$/.exec(path)
+        if (!match) throw new ApiError(404, 'Operación no encontrada.')
+        if (!match[1] && request.method === 'GET') { send(200, await options.whatsapp.list(store)); return }
+        if (request.method === 'POST') {
+          if (store.membership.role !== 'admin') throw new ApiError(403, 'Solo un administrador puede gestionar conexiones.')
+          if (!match[1]) {
+            const body=z.object({label:z.string().trim().min(1).max(60)}).strict().parse(await readBody(request))
+            send(201, await options.whatsapp.create(store,body.label,z.uuid().parse(request.headers['idempotency-key']))); return
+          }
+          send(200, await options.whatsapp.action(store,match[1],match[2] as 'connect'|'restart'|'disconnect')); return
+        }
+        throw new ApiError(405, 'Método no permitido.')
       }
       if (path === '/api/campaigns' || path.startsWith('/api/campaigns/')) {
         if (!store.campaigns) throw new ApiError(503, 'Campañas no disponibles.')

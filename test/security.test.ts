@@ -20,6 +20,7 @@ before(async () => {
     grant execute on function auth.uid() to authenticated, anon;
     insert into auth.users values ('${admin}'),('${operator}'),('${other}'),('${outsider}');`)
   await db.exec(await readFile(new URL('../supabase/migrations/20261105025724_koi_foundation.sql', import.meta.url), 'utf8'))
+  await db.exec(await readFile(new URL('../supabase/migrations/20261106012710_koi_whatsapp_instances.sql', import.meta.url), 'utf8'))
   await db.exec(`insert into public.koi_workspaces(id,name) values ('${workspace}','Koi prueba'),('${second}','Otro equipo');
     insert into public.koi_workspace_members(workspace_id,user_id,role) values ('${workspace}','${admin}','admin'),('${workspace}','${operator}','operator'),('${second}','${other}','admin');`)
 })
@@ -74,4 +75,16 @@ test('revocation takes effect without changing the JWT', async () => {
     assert.equal((await db.query('select * from public.koi_lead_lists')).rows.length, 0)
     assert.equal((await db.query('update public.koi_lead_lists set name = $1 where id = $2 returning id', ['Revocado', listId])).rows.length, 0)
   })
+})
+
+test('WhatsApp registry isolates workspaces, permits admin only and forbids choosing provider identity', async()=>{
+ await db.query("insert into koi_workspace_members(workspace_id,user_id,role) values($1,$2,'operator')",[workspace,operator])
+ await asUser(admin,async()=>{
+  const row=await db.query<{instance_name:string}>("insert into koi_whatsapp_instances(workspace_id,label,request_id) values($1,'Comercial',gen_random_uuid()) returning instance_name",[workspace]);assert.match(row.rows[0]!.instance_name,/^koi-[a-f0-9]{32}$/)
+  await assert.rejects(db.query("insert into koi_whatsapp_instances(id,workspace_id,label,request_id) values(gen_random_uuid(),$1,'Attack',gen_random_uuid())",[workspace]),/permission denied/)
+  await assert.rejects(db.query("update koi_whatsapp_instances set label='Changed'"),/permission denied/)
+ })
+ await asUser(operator,async()=>{assert.equal((await db.query('select * from koi_whatsapp_instances')).rows.length,1);await assert.rejects(db.query("insert into koi_whatsapp_instances(workspace_id,label,request_id) values($1,'Bad',gen_random_uuid())",[workspace]),/row-level security/)})
+ await asUser(other,async()=>{assert.equal((await db.query('select * from koi_whatsapp_instances')).rows.length,0);await assert.rejects(db.query("insert into koi_whatsapp_instances(workspace_id,label,request_id) values($1,'Bad',gen_random_uuid())",[workspace]),/row-level security/)})
+ await asUser(admin,async()=>{for(let i=1;i<10;i++)await db.query("insert into koi_whatsapp_instances(workspace_id,label,request_id) values($1,'Extra',gen_random_uuid())",[workspace]);await assert.rejects(db.query("insert into koi_whatsapp_instances(workspace_id,label,request_id) values($1,'Too many',gen_random_uuid())",[workspace]),/Instance limit reached/)})
 })

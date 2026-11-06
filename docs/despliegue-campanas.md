@@ -51,7 +51,7 @@ node --env-file=.env.provision scripts/provision-campaigns.ts
 
 El script crea `.local-campaigns/worker.env` y `.local-campaigns/api-webhook.env`, con permisos de archivo privados. No imprime secretos, no modifica contactos y se niega a sobrescribir archivos o roles ya activados. No subir esos archivos a Git ni pegarlos en el chat. Eliminar `.env.provision` después de completar la provisión; esa contraseña administrativa **no debe quedar en Dokploy**.
 
-Si Node rechaza la cadena TLS, descargar el certificado raíz del proyecto desde Supabase y agregar `KOI_DATABASE_CA_FILE=/ruta/al/certificado.crt`; montar ese mismo certificado en los contenedores. No desactivar la verificación TLS.
+El repo incluye el certificado raíz público enlazado por el panel de Supabase en `certs/supabase-prod-ca-2021.crt`. El script y ambos Dockerfiles lo usan con verificación de cadena y hostname; no se desactiva TLS. `KOI_DATABASE_CA_FILE` permite indicar una ruta alternativa para una futura rotación del certificado.
 
 ## 3. Configurar la API existente
 

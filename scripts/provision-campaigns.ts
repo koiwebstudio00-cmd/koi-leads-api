@@ -9,10 +9,11 @@ const adminUrl=process.env.KOI_ADMIN_DATABASE_URL
 const instance=process.env.EVOLUTION_INSTANCE_NAME
 const workspace=process.env.KOI_EVOLUTION_WORKSPACE_ID
 if(!adminUrl||!instance||!workspace||!/^[A-Za-z0-9_-]{1,100}$/.test(instance)||!/^[a-f0-9-]{36}$/i.test(workspace))throw new Error('Faltan KOI_ADMIN_DATABASE_URL, EVOLUTION_INSTANCE_NAME o KOI_EVOLUTION_WORKSPACE_ID válidos.')
-const url=new URL(adminUrl)
+let url:URL
+try { url=new URL(adminUrl) } catch { throw new Error('La URI administrativa no tiene formato válido; revisá el archivo local.') }
 if(!['postgres:','postgresql:'].includes(url.protocol)||url.port==='6543')throw new Error('Usá conexión directa o Session Pooler (5432), no Transaction Pooler.')
 for(const key of ['sslmode','sslcert','sslkey','sslrootcert'])url.searchParams.delete(key)
-const pool=new Pool({connectionString:url.toString(),max:1,connectionTimeoutMillis:10000,ssl:{rejectUnauthorized:true,...(process.env.KOI_DATABASE_CA_FILE?{ca:readFileSync(process.env.KOI_DATABASE_CA_FILE,'utf8')}:{})}})
+const pool=new Pool({connectionString:url.toString(),max:1,connectionTimeoutMillis:10000,ssl:{rejectUnauthorized:true,ca:readFileSync(process.env.KOI_DATABASE_CA_FILE??new URL('../certs/supabase-prod-ca-2021.crt',import.meta.url),'utf8')}})
 const folder=resolve(process.env.KOI_PROVISION_OUTPUT??'.local-campaigns')
 const workerPassword=randomBytes(32).toString('hex'),hookPassword=randomBytes(32).toString('hex'),webhookSecret=randomBytes(32).toString('hex')
 function machineUrl(role:string,password:string){const result=new URL(url);const suffix=decodeURIComponent(result.username).includes('.')?'.'+decodeURIComponent(result.username).split('.').slice(1).join('.'):'';result.username=role+suffix;result.password=password;return result.toString()}
@@ -31,4 +32,4 @@ try {
  await pool.query('alter role koi_campaign_webhook login password '+escapeLiteral(hookPassword))
  await pool.query('commit')
  console.log('Credenciales creadas en '+folder+'. Cargalas en Dokploy según docs/despliegue-campanas.md. No subas esta carpeta a Git.')
-}catch{await pool.query('rollback').catch(()=>{});console.error('No se completó la provisión. Revisá conexión, permisos y si la carpeta de salida ya existe. No publiques sus archivos.');process.exitCode=1}finally{await pool.end()}
+}catch(error){const code=(error as {code?:unknown}).code;console.error('Código de diagnóstico: '+(typeof code==='string'&&/^[A-Z0-9_]+$/.test(code)?code:'CONFIGURACION_O_CONEXION'));await pool.query('rollback').catch(()=>{});console.error('No se completó la provisión. Revisá conexión, permisos y si la carpeta de salida ya existe. No publiques sus archivos.');process.exitCode=1}finally{await pool.end()}

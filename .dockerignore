@@ -3,3 +3,5 @@
 !package-lock.json
 !src/
 !src/**
+!certs/
+!certs/*.crt

@@ -57,7 +57,7 @@ test('database validates auth, variables, preview and atomic idempotent start',a
  assert.equal((await api('create',input)).id,c.id)
  await assert.rejects(api('create',{...input,name:'Changed'}),/Idempotency conflict/)
  await assert.rejects(api('detail',{id:c.id},outsider),/Not authorized/)
- const preview=await api('preview',{id:c.id});assert.equal(preview.eligible,2);assert.equal(preview.excluded,1);assert.equal(preview.rows[0].message,'Hola Ana')
+ const preview=await api('preview',{id:c.id});assert.equal(preview.eligible,3);assert.equal(preview.excluded,0);assert.equal(preview.rows[0].message,'Hola Ana')
  const key=randomUUID();const payload={id:c.id,revision:c.revision,key,fingerprint:preview.fingerprint};await assert.rejects(api('start',{...payload,fingerprint:'00000000000000000000000000000000'}),/Preview changed/);const results=await Promise.all([api('start',payload),api('start',payload)]);assert.equal(results[0].id,results[1].id)
  assert.equal((await db.query('select count(*)::int n from koi_campaign_recipients where campaign_id=$1',[c.id])).rows[0].n,3)
  await assert.rejects(api('update',{...input,id:c.id,revision:0}),/Stale draft/)

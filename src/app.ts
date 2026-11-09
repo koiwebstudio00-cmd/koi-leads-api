@@ -1,3 +1,5 @@
+import { crmRoute } from './crm.ts'
+import { leadInput } from './lead-input.ts'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import type { WhatsAppManager } from './whatsapp.ts'
@@ -79,6 +81,10 @@ export function createApp(options: { authorize: Authorize; origin: string; whats
         }
         throw new ApiError(405, 'Método no permitido.')
       }
+      if (path.startsWith('/api/crm/')) {
+        if (!store.crm) throw new ApiError(503, 'CRM no disponible.')
+        const result = await crmRoute(request, url, store.crm, () => readBody(request)); send(result.status, result.data); return
+      }
       if (path === '/api/campaigns' || path.startsWith('/api/campaigns/')) {
         if (!store.campaigns) throw new ApiError(503, 'Campañas no disponibles.')
         const result = await campaignRoute(request, url, store.campaigns, () => readBody(request, 524288)); send(result.status, result.data); return
@@ -108,6 +114,12 @@ export function createApp(options: { authorize: Authorize; origin: string; whats
           const key = z.uuid().parse(request.headers['idempotency-key'])
           send(200, await store.imports.commit(id, key, await readBody(request, IMPORT_LIMITS.previewBytes))); return
         }
+      }
+      const lead = /^\/api\/leads\/([^/]+)$/.exec(path)
+      if (lead && request.method === 'PATCH') {
+        const parsed = leadInput.safeParse(await readBody(request))
+        if (!parsed.success) throw new ApiError(422, parsed.error.issues[0]?.message ?? 'Revisá los datos del contacto.')
+        send(200, await store.imports.updateContact(z.uuid().parse(lead[1]), parsed.data)); return
       }
       const contacts = /^\/api\/lead-lists\/([^/]+)\/leads$/.exec(path)
       if (contacts && request.method === 'GET') {

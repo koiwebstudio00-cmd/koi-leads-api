@@ -25,7 +25,7 @@ export type ImportResult = {
 }
 export type ImportCheck = { newContacts: number; existingContacts: number; blocked: number }
 export type RecentImport = { id:string; filename:string; status:'draft'|'committed'; created_at:string }
-export type Lead = { id: string; phone: string; name: string; company: string; email: string; source: string; consent: 'unknown' | 'granted' | 'denied'; suppressed: boolean }
+export type Lead = { revision: number; id: string; phone: string; name: string; company: string; email: string; source: string; consent: 'unknown' | 'granted' | 'denied'; suppressed: boolean }
 
 export function suggestMapping(headers: string[]): Mapping {
   const mapping: Mapping = { phone: null, name: null, company: null, email: null, source: null }

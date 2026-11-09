@@ -1,3 +1,4 @@
+import type { LeadInput } from './lead-input.ts'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import type { ImportCheck, ImportDraft, ImportResult, Lead, ParsedImport, RecentImport } from './contracts/imports.ts'
@@ -5,6 +6,7 @@ import { ApiError } from './store.ts'
 import { prepareCommit, validateDraftChoices } from './import-service.ts'
 
 export type ImportStore = {
+  updateContact: (id: string, input: LeadInput) => Promise<{ id: string; revision: number }>
   recent: () => Promise<RecentImport[]>
   stage: (data: ParsedImport) => Promise<ImportDraft>
   draft: (id: string) => Promise<ImportDraft>
@@ -23,6 +25,14 @@ function decode(record: unknown): ImportDraft {
 
 export function createImportStore(client: SupabaseClient, workspace: string, userId: string, databaseError: DbError): ImportStore {
   const store: ImportStore = {
+    async updateContact(id, { revision, ...input }) {
+      const { data, error } = await client.from('koi_leads').update(input)
+        .eq('id', id).eq('workspace_id', workspace).eq('revision', revision).select('id,revision').maybeSingle()
+      if (error?.code === '23505') throw new ApiError(409, 'Ese teléfono ya pertenece a otro contacto de este espacio.')
+      databaseError(error)
+      if (!data) throw new ApiError(409, 'El contacto cambió o ya no está disponible. Cerrá la edición, actualizá la base y volvé a intentar.')
+      return z.object({ id: z.uuid(), revision: z.number().int() }).parse(data)
+    },
     async recent() {
       const { data,error } = await client.from('koi_imports').select('id,filename,status,created_at').eq('workspace_id',workspace).eq('created_by',userId).order('created_at',{ ascending:false }).limit(10)
       databaseError(error)
@@ -61,11 +71,11 @@ export function createImportStore(client: SupabaseClient, workspace: string, use
       const { data: list, error: listError } = await client.from('koi_lead_lists').select('id').eq('workspace_id', workspace).eq('id', listId).maybeSingle()
       databaseError(listError)
       if (!list) throw new ApiError(404, 'No encontramos esa base.')
-      let query = client.from('koi_lead_list_members').select('lead:koi_leads!inner(id,phone,name,company,email,source,consent)', { count: 'exact' }).eq('workspace_id', workspace).eq('list_id', listId)
+      let query = client.from('koi_lead_list_members').select('lead:koi_leads!inner(id,phone,name,company,email,source,consent,revision)', { count: 'exact' }).eq('workspace_id', workspace).eq('list_id', listId)
       if (phone) query = query.ilike('lead.phone', `%${phone}%`)
       const { data, error, count } = await query.order('created_at', { ascending: false }).order('lead_id').range((page - 1) * 50, page * 50 - 1)
       databaseError(error)
-      const schema = z.array(z.object({ lead: z.object({ id: z.uuid(), phone: z.string(), name: z.string(), company: z.string(), email: z.string(), source: z.string(), consent: z.enum(['unknown','granted','denied']) }) }))
+      const schema = z.array(z.object({ lead: z.object({ revision: z.number().int(), id: z.uuid(), phone: z.string(), name: z.string(), company: z.string(), email: z.string(), source: z.string(), consent: z.enum(['unknown','granted','denied']) }) }))
       const leads = schema.parse(data).map(row => row.lead)
       if (!leads.length) return { leads: [], total: count ?? 0 }
       const { data: suppressed, error: suppressionError } = await client.from('koi_suppressions').select('phone').eq('workspace_id', workspace).in('phone', leads.map(lead => lead.phone))

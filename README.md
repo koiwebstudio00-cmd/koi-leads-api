@@ -6,6 +6,8 @@ Backend independiente de Koi Leads, con Node.js 24 y TypeScript. Este repositori
 
 - Autenticación con Supabase y autorización por membresía del espacio, conservando RLS del usuario.
 - Bases de leads con nombre, edición, búsqueda y paginación.
+- Edición de contactos, tabla global, pipeline, etiquetas, responsables, próximas acciones, notas e historial.
+- Duplicación de campañas como borradores y avance automático a Contactado tras un envío aceptado.
 - Importación CSV/XLSX: vista previa, preparación guardada, edición, selección, deduplicación y confirmación transaccional e idempotente. Límite de 5.000 filas y 10 MiB.
 - Estado de la conexión Evolution desde el servidor, con clave privada, timeout y errores sanitizados.
 
@@ -93,3 +95,39 @@ El servicio no está desplegado por el solo hecho de publicar este repositorio.
 - Contratos HTTP sin cambios respecto del frontend existente. Sin dependencias de carpetas externas.
 
 Estas comprobaciones no constituyen una prueba productiva contra Evolution ni envían mensajes.
+
+## Contactos y campañas — 6/11/2026
+
+La migración koi_contact_editing_cold_outreach está aplicada en Supabase. El consentimiento es un dato histórico opcional: no excluye contactos de la vista previa, del inicio ni del worker. Se mantienen las bajas explícitas y la validación de variables del mensaje.
+
+PATCH /api/leads/:id permite editar nombre, teléfono, empresa, email y origen. Normaliza el teléfono, rechaza duplicados y exige revision para detectar ediciones concurrentes. RLS limita la escritura a miembros del espacio y los grants solo permiten editar esos cinco campos. Una edición se refleja en todas las bases; las campañas iniciadas conservan su snapshot.
+
+Validación: pruebas de contactos, aislamiento, edición concurrente y paso por el worker con consentimiento unknown en test/contacts.test.ts; recorrido de edición e inicio en las pruebas integradas del frontend.
+
+## CRM comercial — 6/11/2026
+
+Migración aplicada: `20261106173832_koi_lead_pipeline.sql`. Agrega etapa, etiquetas, responsable del mismo workspace, próxima acción y fecha, y notas con autor derivado de la sesión. Conserva los contactos; etapa inicial Nuevo. El avance Nuevo → Contactado es automático tras un envío aceptado; las demás etapas se gestionan manualmente.
+
+`GET /api/crm/leads`, `GET /api/crm/board` y `GET /api/crm/options` consultan los contactos globales y filtros; `/api/crm/leads/:id` obtiene la ficha o actualiza seguimiento con PATCH y revision. `/api/crm/leads/:id/notes` permite GET paginado y POST con Idempotency-Key; `/api/crm/leads/:id/history` consulta campañas iniciadas. Páginas de 30 filas. RLS aísla cada workspace; la consulta de responsables solo expone miembros del espacio del usuario.
+
+`POST /api/campaigns/:id/duplicate` con Idempotency-Key copia a borrador y limpia startsAt. No inicia envíos. La revisión y confirmación usan el flujo existente.
+
+Validación: `npm run verify` (50 tests); pruebas de deduplicación entre bases, paginación, filtros, concurrencia, notas idempotentes y aislamiento en `test/crm.test.ts`. Consulta autenticada verificada contra Supabase: 2 leads y 7 columnas. Los recorridos del frontend usan PGlite y proveedores simulados.
+
+
+## Avance automático del pipeline
+Cada envío aceptado cambia Nuevo a Contactado en la misma transacción. Los fallidos, pendientes, omitidos o inciertos no avanzan. Las etapas posteriores se conservan. La migración koi_pipeline_contacted_automation reconcilia el historial existente. Kanban y tabla consultan actualizaciones cada 10 segundos mientras estén visibles, sin interrumpir escritura o arrastre.
+
+## Entrega consolidada — 9/11/2026
+
+Migraciones de esta entrega, aplicadas al proyecto Koi el 6/11/2026:
+
+| Archivo | Cambio |
+| --- | --- |
+| `20261106164809_koi_contact_editing_cold_outreach.sql` | Edición con revision y consentimiento informativo; conserva bajas explícitas. |
+| `20261106173832_koi_lead_pipeline.sql` | Campos CRM, notas, consultas paginadas y aislamiento por workspace. |
+| `20261106175306_koi_pipeline_contacted_automation.sql` | Nuevo → Contactado al aceptar un envío y reconciliación del historial. |
+
+El trigger actualiza la etapa dentro de la transacción que registra el resultado del worker. El rol interno solo puede modificar stage conforme a su política RLS. Un resultado aceptado no garantiza entrega o lectura. Los reintentos del mismo resultado no repiten el cambio y ninguna etapa posterior retrocede.
+
+Para desarrollo local, configurar `KOI_APP_ORIGIN=http://localhost:5173`, iniciar la API con `npm run dev` y el frontend en otra terminal. El worker se inicia por separado con `npm run worker` y requiere la configuración de la guía de despliegue. Los procesos locales quedan detenidos al cerrar esta entrega. Un commit no despliega servicios ni ejecuta migraciones.

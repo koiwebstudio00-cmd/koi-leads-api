@@ -37,12 +37,18 @@ async function draft(tx:Transaction,id:string):Promise<ImportDraft> {
 }
 await db.query('insert into koi_private.senders(workspace_id,instance) values($1,$2)',[workspace,'test-only'])
 const store:UserStore = {
+  crm:(action,data) => query(async tx => (await tx.query<{result:unknown}>('select koi_crm_command($1,$2) as result',[action,JSON.stringify(data)])).rows[0]!.result),
   campaigns:(action,data) => query(async tx => (await tx.query<{result:unknown}>('select koi_campaign_command($1,$2) as result',[action,JSON.stringify(data)])).rows[0]!.result),
   userId:user,membership:{ workspace_id:workspace,workspace_name:'Estudio Koi',role:'admin' },
   list:(page,search) => query(async tx => ({ lists:(await tx.query<LeadList>('select * from koi_lead_lists where name ilike $1 order by created_at desc,id desc limit 24 offset $2',[`%${search}%`,(page-1)*24])).rows,total:Number((await tx.query<{ n:number }>('select count(*) as n from koi_lead_lists where name ilike $1',[`%${search}%`])).rows[0]!.n) })),
   create:(input,key) => query(async tx => (await tx.query<LeadList>('insert into koi_lead_lists(workspace_id,name,description,request_id) values($1,$2,$3,$4) returning *',[workspace,input.name,input.description,key])).rows[0]!),
   update:(id,input) => query(async tx => (await tx.query<LeadList>('update koi_lead_lists set name=$1,description=$2 where id=$3 returning *',[input.name,input.description,id])).rows[0]!),
   imports:{
+    updateContact:(id,{revision,...input}) => query(async tx => {
+      const row=(await tx.query<{id:string;revision:number}>('update koi_leads set name=$1,phone=$2,company=$3,email=$4,source=$5 where id=$6 and revision=$7 returning id,revision',[input.name,input.phone,input.company,input.email,input.source,id,revision])).rows[0]
+      if(!row)throw new ApiError(409,'El contacto cambió. Actualizá la base.')
+      return row
+    }),
     recent:() => query(async tx => (await tx.query<RecentImport>('select id,filename,status,created_at from koi_imports where created_by=$1 order by created_at desc limit 10',[user])).rows),
     stage:payload => query(async tx => {
       const inserted = (await tx.query<{ id:string }>('insert into koi_imports(workspace_id,payload) values($1,$2) returning id',[workspace,JSON.stringify(payload)])).rows[0]!

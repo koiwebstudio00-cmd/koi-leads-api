@@ -11,7 +11,7 @@ export async function campaignRoute(request: IncomingMessage, url: URL, command:
     if (request.method === 'GET') return { status: 200, data: await command('list', { page: page() }) }
     if (request.method === 'POST') return { status: 201, data: await command('create', { ...campaignInput.parse(await readBody()), key: key() }) }
   }
-  const match = /^\/api\/campaigns\/([^/]+)(?:\/(preview|start|pause|resume|cancel|recipients|progress|events|resolve))?$/.exec(path)
+  const match = /^\/api\/campaigns\/([^/]+)(?:\/(preview|start|pause|resume|cancel|recipients|progress|events|resolve|duplicate))?$/.exec(path)
   if (!match) throw new ApiError(404, 'No encontramos esa operación.')
   const id = z.uuid().parse(match[1]); const action = match[2]
   if (request.method === 'GET') {
@@ -24,6 +24,11 @@ export async function campaignRoute(request: IncomingMessage, url: URL, command:
     return { status: 200, data: await command('update', { id, revision: input.revision, ...input.input }) }
   }
   if (request.method === 'POST' && action) {
+    if (action === 'duplicate') {
+      const source = z.object({ campaign:z.object({ name:z.string(),list_id:z.uuid(),template:z.string(),selection:z.array(z.uuid()),config:campaignInput.shape.config }) }).parse(await command('detail',{id})).campaign
+      const input = campaignInput.parse({name:(source.name+' · Copia').slice(0,100),listId:source.list_id,template:source.template,recipientIds:source.selection,config:{...source.config,startsAt:null}})
+      return {status:201,data:await command('create',{...input,key:key()})}
+    }
     if (action === 'start') {
       const input = z.object({ revision: z.number().int().nonnegative(), fingerprint: z.string().regex(/^[a-f0-9]{32}$/) }).strict().parse(await readBody())
       return { status: 202, data: await command('start', { id, key: key(), revision: input.revision, fingerprint: input.fingerprint }) }

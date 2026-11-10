@@ -13,6 +13,7 @@ const column = z.number().int().min(0).max(IMPORT_LIMITS.columns - 1).nullable()
 const rowKey = z.string().regex(/^[1-9]\d{0,4}$/)
 const consent = z.object({ state: z.enum(['unknown', 'granted', 'denied']), evidence: z.string().max(1000) }).strict()
 export const choicesSchema = z.object({
+  product:z.enum(['','cubiko','zyro','toki','estudio']).optional(),updateFields:z.array(z.enum(['name','company','email','source'])).max(4).optional(),expectedRevisions:z.record(z.string().regex(/^[1-9]\d{9,14}$/),z.number().int().nonnegative()).optional(),
   revision:z.number().int().nonnegative().default(0),
   mapping: z.object({ phone: column, name: column, company: column, email: column, source: column }).strict(),
   country: z.enum(['AR', 'international']), trim: z.boolean(),
@@ -39,6 +40,7 @@ export function prepareCommit(draft: ImportDraft, input: unknown) {
   const rows = prepareRows(draft, choices).map(row => ({ ...row, selected: selected.has(row.row) }))
   const invalid = rows.find(row => row.selected && row.error)
   if (invalid) throw new ApiError(422, `Fila ${invalid.row}: ${invalid.error} Corregila o desmarcala.`)
+  if (choices.updateFields?.some(field=>choices.mapping[field]===null)) throw new ApiError(422,'Asigná las columnas que querés actualizar.');
   const payload = { target: choices.target, rows, choices }
   if (Buffer.byteLength(JSON.stringify(payload)) > 20_000_000) throw new ApiError(422,'Los datos preparados superan 20 MB. Dividí el archivo para registrar la selección.')
   return payload

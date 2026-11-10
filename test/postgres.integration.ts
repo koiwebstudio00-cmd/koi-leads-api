@@ -12,8 +12,8 @@ let db:Pool; let worker:Pool; let hook:Pool
 const user=randomUUID(),workspace=randomUUID(),outsider=randomUUID(),list=randomUUID()
 const first=randomUUID(),second=randomUUID(),denied=randomUUID()
 const cfg={intervalSeconds:1,perMinute:60,perHour:3600,perDay:10000,timezone:'America/Argentina/Tucuman',days:[0,1,2,3,4,5,6],startMinute:0,endMinute:1440,startsAt:null}
-async function api(action:string,data:Record<string,unknown>,actor=user){
- const c=await db.connect();try{await c.query('begin');await c.query('set local role authenticated');await c.query("select set_config('request.jwt.claim.sub',$1,true)",[actor]);const r=await c.query('select public.koi_campaign_command($1,$2) as result',[action,data]);await c.query('commit');return r.rows[0].result}catch(e){await c.query('rollback');throw e}finally{c.release()}
+async function api(action:string,data:Record<string,unknown>,actor=user,feature:'campaign'|'chat'='campaign'){
+ const c=await db.connect();try{await c.query('begin');await c.query('set local role authenticated');await c.query("select set_config('request.jwt.claim.sub',$1,true)",[actor]);const r=await c.query(`select public.koi_${feature}_command($1,$2) as result`,[action,data]);await c.query('commit');return r.rows[0].result}catch(e){await c.query('rollback');throw e}finally{c.release()}
 }
 async function machine(action:string,data:Record<string,unknown>={},pool=worker){return (await pool.query('select koi_private.worker_command($1,$2) as result',[action,{instance:'koi-01',...data}])).rows[0].result}
 async function campaign(template='Hola {{nombre}}'){
@@ -48,7 +48,13 @@ before(async()=>{
 })
 after(async()=>{
  await worker?.end();await hook?.end();await db?.end()
- await root.query(`drop database if exists ${database} with(force)`)
+ // Esperar el cierre real de sockets antes de eliminar la base descartable.
+ for(let attempt=0;attempt<50;attempt++){
+  const active=await root.query('select count(*)::int n from pg_stat_activity where datname=$1',[database])
+  if(active.rows[0].n===0)break
+  await new Promise(resolve=>setTimeout(resolve,20))
+ }
+ await root.query(`drop database if exists ${database}`)
  await root.query('drop role if exists koi_campaign_worker,koi_campaign_webhook,koi_campaign_owner')
  await root.end()
 })
@@ -112,4 +118,73 @@ test('optout immediately excludes queued and leased contacts',async()=>{
  await machine('ingest',{eventKey:'optout',kind:'optout',phone:job.phone},hook)
  assert.equal(await machine('begin',{id:job.id,token:job.lease_token}),null)
  assert.equal((await db.query('select status from koi_campaign_recipients where id=$1',[job.id])).rows[0].status,'skipped')
+})
+
+test('concurrent starts reserve exactly two slots and both campaigns make progress',async()=>{
+ await db.query('delete from koi_private.message_attempts')
+ const {c,input}=await campaign()
+ const b=await api('create',{...input,name:'Segunda',key:randomUUID()})
+ const third=await api('create',{...input,name:'Tercera',key:randomUUID()})
+ const results=await Promise.allSettled([start(c),start(b),start(third)])
+ assert.equal(results.filter(r=>r.status==='fulfilled').length,2)
+ const rejected=results.find(r=>r.status==='rejected') as PromiseRejectedResult
+ assert.equal(rejected.reason.code,'PT429')
+ const slots=await db.query("select active_slot from koi_campaigns where status in ('running','scheduled','paused') order by active_slot")
+ assert.deepEqual(slots.rows.map(r=>r.active_slot),[1,2])
+ const claims=await Promise.all([machine('claim'),machine('claim')])
+ assert.equal(claims.filter(Boolean).length,1)
+ const job=claims.find(Boolean)
+ await machine('begin',{id:job.id,token:job.lease_token})
+ await machine('finish',{id:job.id,token:job.lease_token,outcome:'accepted',providerId:'concurrent-first'})
+ await releaseRate()
+ const next=await machine('claim')
+ assert.ok(next)
+ assert.notEqual(next.campaign_id,job.campaign_id)
+})
+
+
+test('chat receives once, retains early receipts, and isolates messages and attachments by workspace',async()=>{
+ const chat=(action:string,data:Record<string,unknown>,actor=user)=>api(action,data,actor,'chat')
+ const thread=await chat('open',{leadId:first,instanceId:'primary'})
+ const incoming={kind:'message',peer:'5493811111111@s.whatsapp.net',phone:'5493811111111',providerId:'chat-incoming',text:'Consulta de prueba'}
+ await machine('chat_ingest',incoming,hook);await machine('chat_ingest',incoming,hook)
+ const firstRead=await chat('detail',{id:thread.id})
+ assert.equal(firstRead.messages.length,1);assert.equal(firstRead.conversation.unread,1)
+ await chat('read',{id:thread.id,through:firstRead.messages[0].seq})
+ assert.equal((await chat('detail',{id:thread.id})).conversation.unread,0)
+ await assert.rejects(chat('detail',{id:thread.id},outsider),/Membership required/)
+ await assert.rejects(machine('chat_ingest',{...incoming,instance:'foreign-instance'},hook),/Unknown instance/)
+ await assert.rejects(machine('chat_claim',{},hook),/Worker required/)
+ await assert.rejects(machine('chat_ingest',incoming),/Webhook required/)
+ await machine('chat_ingest',{kind:'receipt',providerId:'early-outbound',delivery:'read'},hook)
+ await machine('chat_ingest',{...incoming,providerId:'early-outbound',outbound:true,text:'Respuesta del teléfono'},hook)
+ await machine('chat_ingest',{kind:'receipt',providerId:'early-outbound',delivery:'sent'},hook)
+ assert.equal((await chat('detail',{id:thread.id})).messages[1].delivery,'read')
+ const historical={...incoming,providerId:'historic-chat',text:'Mensaje de ayer',sentAt:'2026-01-01T12:00:00Z'}
+ await machine('chat_history',{events:[historical]},hook)
+ await machine('chat_history',{events:[historical]},hook)
+ const history=await chat('detail',{id:thread.id})
+ assert.equal(history.messages.length,3);assert.equal(history.messages[0].body,'Mensaje de ayer');assert.equal(history.conversation.unread,0)
+ assert.deepEqual((await chat('detail',{id:thread.id,before:history.messages[1].seq})).messages.map((message:{body:string})=>message.body),['Mensaje de ayer'])
+})
+
+test('manual sending is idempotent and shares dispatch and attempt limits with campaigns',async()=>{
+ await db.query('delete from koi_private.message_attempts')
+ await db.query('delete from public.koi_suppressions where workspace_id=$1',[workspace])
+ const {c}=await campaign();await start(c)
+ await db.query('update koi_private.senders set max_day=1 where workspace_id=$1',[workspace])
+ const chat=(action:string,data:Record<string,unknown>)=>api(action,data,user,'chat')
+ const thread=await chat('open',{leadId:second,instanceId:'primary'})
+ const key=randomUUID(),base64=Buffer.from('%PDF-1.7 fixture').toString('base64')
+ const input={id:thread.id,key,text:'Archivo de prueba',mime:'application/pdf',fileName:'prueba.pdf',base64}
+ const queued=await chat('send',input)
+ assert.equal((await chat('send',input)).id,queued.id)
+ assert.equal((await chat('attachment',{id:thread.id,messageId:queued.id})).base64,base64)
+ const reservation=await machine('chat_claim');assert.equal(reservation.id,queued.id)
+ assert.equal(await machine('claim'),null)
+ const payload=await machine('chat_begin',reservation);assert.equal(payload.base64,base64)
+ await machine('chat_ingest',{kind:'message',peer:'5493812222222@s.whatsapp.net',phone:'5493812222222',providerId:'manual-echo',outbound:true,text:'Archivo de prueba'},hook)
+ await machine('chat_finish',{...reservation,outcome:'accepted',providerId:'manual-echo'})
+ assert.equal((await chat('detail',{id:thread.id})).messages.length,1)
+ await releaseRate();assert.equal(await machine('claim'),null)
 })

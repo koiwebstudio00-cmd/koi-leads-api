@@ -11,6 +11,7 @@ export type ParsedImport = {
 export type ImportDraft = ParsedImport & { id: string; status: 'draft' | 'committed'; result: ImportResult | null; choices?: ImportChoices | null; revision?: number }
 export type ImportChoices = {
   revision?: number
+  product?: string; updateFields?: ('name'|'company'|'email'|'source')[]; expectedRevisions?: Record<string,number>
   mapping: Mapping; country: 'AR' | 'international'; trim: boolean
   edits: Record<string, string[]>; selected: number[]; consents: Record<string, Consent>
   target: { listId: string } | { name: string; description: string }
@@ -20,10 +21,11 @@ export type PreparedRow = SourceRow & {
   extra: Record<string, string>; consent: Consent; error: string; warning: string; duplicate: boolean; blank: boolean
 }
 export type ImportResult = {
-  importId: string; listId: string; total: number; selected: number; created: number
+  updated?: number; importId: string; listId: string; total: number; selected: number; created: number
   linked: number; alreadyLinked: number; duplicates: number; excluded: number; blocked: number
 }
-export type ImportCheck = { newContacts: number; existingContacts: number; blocked: number }
+export type ImportUpdate = {phone:string;revision:number;before:Record<string,unknown>;after:Record<string,unknown>}
+export type ImportCheck = { updates?:ImportUpdate[]; newContacts: number; existingContacts: number; blocked: number }
 export type RecentImport = { id:string; filename:string; status:'draft'|'committed'; created_at:string }
 export type Lead = { revision: number; id: string; phone: string; name: string; company: string; email: string; source: string; consent: 'unknown' | 'granted' | 'denied'; suppressed: boolean }
 

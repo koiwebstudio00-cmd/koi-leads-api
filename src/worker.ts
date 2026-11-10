@@ -1,3 +1,4 @@
+import { createChatMedia } from './conversations.ts'
 import { writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -19,6 +20,13 @@ const config = parsed.data
 const machine = createMachineStore(config.KOI_WORKER_DATABASE_URL, config.KOI_DATABASE_CA_FILE)
 const connection = createEvolutionConnection({ url: config.EVOLUTION_PUBLIC_URL, apiKey: config.EVOLUTION_API_KEY, instanceName: config.EVOLUTION_INSTANCE_NAME, workspaceId: config.KOI_EVOLUTION_WORKSPACE_ID })
 const send = createTextSender({ url: config.EVOLUTION_PUBLIC_URL, apiKey: config.EVOLUTION_API_KEY, instance: config.EVOLUTION_INSTANCE_NAME })
+const media = createChatMedia({ url: config.EVOLUTION_PUBLIC_URL, apiKey: config.EVOLUTION_API_KEY })
+const chat = {
+  connected: async (instance: string) => instance === config.EVOLUTION_INSTANCE_NAME ? (await connection.status()).state === 'connected'
+    : (await createEvolutionConnection({ url: config.EVOLUTION_PUBLIC_URL, apiKey: config.EVOLUTION_API_KEY, instanceName: instance, workspaceId: config.KOI_EVOLUTION_WORKSPACE_ID }).status()).state === 'connected',
+  send: (instance: string, job: import('./conversations.ts').ChatSendJob) => job.mime ? media.send(instance, job)
+    : createTextSender({ url: config.EVOLUTION_PUBLIC_URL, apiKey: config.EVOLUTION_API_KEY, instance })(job.phone, job.text),
+}
 const controller = new AbortController()
 for (const signal of ['SIGINT','SIGTERM']) process.once(signal, () => controller.abort())
 const workerId = randomUUID()
@@ -26,7 +34,7 @@ let failures = 0
 console.log(JSON.stringify({ event: 'worker_started', workerId, sendingEnabled: config.KOI_SEND_ENABLED === 'true' }))
 while (!controller.signal.aborted) {
   try {
-    await workerCycle({ command: machine.command, instance: config.EVOLUTION_INSTANCE_NAME, workerId, enabled: config.KOI_SEND_ENABLED === 'true', signal: controller.signal, connected: async () => (await connection.status()).state === 'connected', send })
+    await workerCycle({ command: machine.command, instance: config.EVOLUTION_INSTANCE_NAME, workerId, enabled: config.KOI_SEND_ENABLED === 'true', signal: controller.signal, connected: async () => (await connection.status()).state === 'connected', send, chat })
     await writeFile('/tmp/koi-worker-heartbeat', String(Date.now()), { mode: 0o600 })
     failures = 0
   } catch {

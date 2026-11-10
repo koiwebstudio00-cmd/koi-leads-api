@@ -1,3 +1,4 @@
+import { conversationEvents } from '../conversation-events.ts'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
 import { ApiError } from '../store.ts'
@@ -40,13 +41,20 @@ export function normalizeWebhook(body: unknown, expectedInstance: string): Recor
   }
   return result
 }
-export function createWebhook(secret: string, instance: string, command: MachineCommand) {
+export function createWebhook(secret: string, instance: string, command: MachineCommand, inbox = false) {
   return async (header: string | string[] | undefined, body: () => Promise<unknown>) => {
     const actual = typeof header === 'string' ? Buffer.from(header) : Buffer.alloc(0)
     const expected = Buffer.from(secret)
     if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new ApiError(401, 'Webhook no autorizado.')
-    const events = normalizeWebhook(await body(), instance)
+    const payload = await body()
+    const parsed = envelope.parse(payload)
+    const events = !inbox || parsed.instance === instance ? normalizeWebhook(payload, instance) : []
     for (const event of events) await command('ingest', event)
-    return { received: events.length }
+    if (!inbox) return { received: events.length }
+    const rows = Array.isArray(parsed.data) ? parsed.data : [parsed.data]
+    if (rows.length > 100) throw new ApiError(413, 'Demasiados eventos.')
+    const messages = conversationEvents(parsed.event.toLowerCase().replaceAll('_','.'), parsed.instance, rows)
+    for (const event of messages) await command('chat_ingest', event)
+    return { received: events.length + messages.length }
   }
 }

@@ -1,3 +1,4 @@
+import { chatRoute, type ReadChatMedia, type SyncChatHistory } from './conversations.ts'
 import { crmRoute } from './crm.ts'
 import { leadInput } from './lead-input.ts'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
@@ -33,7 +34,7 @@ async function readBytes(request: IncomingMessage, maxBytes: number) {
   return Buffer.concat(chunks)
 }
 
-export function createApp(options: { authorize: Authorize; origin: string; whatsapp?: WhatsAppManager; evolution?: EvolutionConnection; webhook?: (header: string | string[] | undefined, body: () => Promise<unknown>) => Promise<unknown> }) {
+export function createApp(options: { authorize: Authorize; origin: string; whatsapp?: WhatsAppManager; readChatMedia?: ReadChatMedia; syncChatHistory?: SyncChatHistory; evolution?: EvolutionConnection; webhook?: (header: string | string[] | undefined, body: () => Promise<unknown>) => Promise<unknown> }) {
   let uploads = 0
   const server = createServer(async (request, response) => {
     const requestId = randomUUID()
@@ -81,9 +82,14 @@ export function createApp(options: { authorize: Authorize; origin: string; whats
         }
         throw new ApiError(405, 'Método no permitido.')
       }
+      if (path === '/api/conversations' || path.startsWith('/api/conversations/')) {
+        if (!store.chat) throw new ApiError(503, 'Conversaciones no disponible.')
+        const result = await chatRoute(request, url, store.chat, limit => readBody(request, limit), options.readChatMedia, options.syncChatHistory)
+        send(result.status, result.data); return
+      }
       if (path.startsWith('/api/crm/')) {
         if (!store.crm) throw new ApiError(503, 'CRM no disponible.')
-        const result = await crmRoute(request, url, store.crm, () => readBody(request)); send(result.status, result.data); return
+        const result = await crmRoute(request, url, store.crm, () => readBody(request, 524288)); send(result.status, result.data); return
       }
       if (path === '/api/campaigns' || path.startsWith('/api/campaigns/')) {
         if (!store.campaigns) throw new ApiError(503, 'Campañas no disponibles.')

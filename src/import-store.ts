@@ -1,7 +1,7 @@
 import type { LeadInput } from './lead-input.ts'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
-import type { ImportCheck, ImportDraft, ImportResult, Lead, ParsedImport, RecentImport } from './contracts/imports.ts'
+import type { ImportUpdate, ImportCheck, ImportDraft, ImportResult, Lead, ParsedImport, RecentImport } from './contracts/imports.ts'
 import { ApiError } from './store.ts'
 import { prepareCommit, validateDraftChoices } from './import-service.ts'
 
@@ -27,7 +27,7 @@ export function createImportStore(client: SupabaseClient, workspace: string, use
   const store: ImportStore = {
     async updateContact(id, { revision, ...input }) {
       const { data, error } = await client.from('koi_leads').update(input)
-        .eq('id', id).eq('workspace_id', workspace).eq('revision', revision).select('id,revision').maybeSingle()
+        .eq('id', id).eq('workspace_id', workspace).is('deleted_at',null).eq('revision', revision).select('id,revision').maybeSingle()
       if (error?.code === '23505') throw new ApiError(409, 'Ese teléfono ya pertenece a otro contacto de este espacio.')
       databaseError(error)
       if (!data) throw new ApiError(409, 'El contacto cambió o ya no está disponible. Cerrá la edición, actualizá la base y volvé a intentar.')
@@ -59,7 +59,8 @@ export function createImportStore(client: SupabaseClient, workspace: string, use
       const phones = [...new Set(prepared.rows.filter(row => row.selected).map(row => row.phone))]
       const { data,error } = await client.rpc('koi_check_import_phones',{ p_phones:phones })
       databaseError(error)
-      return z.object({ newContacts:z.number().int(),existingContacts:z.number().int(),blocked:z.number().int() }).parse(data)
+      const preview=await client.rpc('koi_import_update_preview',{p_rows:prepared.rows,p_fields:prepared.choices.updateFields??[],p_product:prepared.choices.product??null});databaseError(preview.error)
+      return {...z.object({newContacts:z.number().int(),existingContacts:z.number().int(),blocked:z.number().int()}).parse(data),updates:(preview.data??[]) as ImportUpdate[]}
     },
     async save(id,revision,input) {
       const choices = validateDraftChoices(await store.draft(id),input)
@@ -71,7 +72,7 @@ export function createImportStore(client: SupabaseClient, workspace: string, use
       const { data: list, error: listError } = await client.from('koi_lead_lists').select('id').eq('workspace_id', workspace).eq('id', listId).maybeSingle()
       databaseError(listError)
       if (!list) throw new ApiError(404, 'No encontramos esa base.')
-      let query = client.from('koi_lead_list_members').select('lead:koi_leads!inner(id,phone,name,company,email,source,consent,revision)', { count: 'exact' }).eq('workspace_id', workspace).eq('list_id', listId)
+      let query = client.from('koi_lead_list_members').select('lead:koi_leads!inner(id,phone,name,company,email,source,consent,revision)', { count: 'exact' }).eq('workspace_id', workspace).eq('list_id', listId).is('lead.deleted_at',null)
       if (phone) query = query.ilike('lead.phone', `%${phone}%`)
       const { data, error, count } = await query.order('created_at', { ascending: false }).order('lead_id').range((page - 1) * 50, page * 50 - 1)
       databaseError(error)

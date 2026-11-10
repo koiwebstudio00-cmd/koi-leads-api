@@ -131,3 +131,23 @@ Migraciones de esta entrega, aplicadas al proyecto Koi el 6/11/2026:
 El trigger actualiza la etapa dentro de la transacción que registra el resultado del worker. El rol interno solo puede modificar stage conforme a su política RLS. Un resultado aceptado no garantiza entrega o lectura. Los reintentos del mismo resultado no repiten el cambio y ninguna etapa posterior retrocede.
 
 Para desarrollo local, configurar `KOI_APP_ORIGIN=http://localhost:5173`, iniciar la API con `npm run dev` y el frontend en otra terminal. El worker se inicia por separado con `npm run worker` y requiere la configuración de la guía de despliegue. Los procesos locales quedan detenidos al cerrar esta entrega. Un commit no despliega servicios ni ejecuta migraciones.
+
+
+## Gestión de leads y dos campañas — 9/11/2026
+
+Esta entrega agrega dos migraciones nuevas, pendientes de aplicación en producción:
+
+- `20261110024130_koi_lead_management.sql`: producto (`cubiko`, `zyro`, `toki`, `estudio` o sin asignar), resumen de inicio, altas idempotentes, edición/eliminación masiva con revisión y actualización explícita de campos al importar.
+- `20261110024132_koi_two_campaigns.sql`: dos cupos activos por workspace y reparto de trabajo entre campañas elegibles. Programadas, en ejecución y pausadas ocupan cupo. Terminar o cancelar libera el cupo. Cada campaña admite hasta 100 destinatarios; no limita la cantidad total de borradores, campañas históricas ni leads registrados.
+
+Los envíos conservan el número principal y sus límites existentes: 100 intentos diarios compartidos, 2 por minuto, 60 por hora y al menos 30 segundos de separación. Los límites más estrictos de cada configuración siguen aplicándose. El bloqueo por resultado incierto y las bajas se mantienen. Dos campañas activas no implican dos mensajes simultáneos desde el mismo número.
+
+`POST /api/crm/leads` crea un lead; `POST /api/crm/bulk` actualiza o elimina una selección explícita (hasta 5.000 por operación). Ambos requieren `Idempotency-Key`; la selección exige `id` y `revision`. La eliminación conserva historial, quita membresías y omite envíos pendientes; rechaza contactos con envíos en curso o inciertos. Volver a crear un teléfono eliminado restaura la ficha. Las importaciones conservan datos existentes salvo campos y producto expresamente seleccionados, con vista previa y control de revisión.
+
+`GET /api/crm/summary` cuenta contactos únicos, contactos con al menos un envío aceptado y campañas por estado. Aceptación no equivale a entrega ni lectura.
+
+Antes de publicar: detener el worker, aplicar las dos migraciones en orden, desplegar API y frontend compatibles y reiniciar el worker con su configuración existente. La segunda migración se detiene si hay una campaña activa con más de 100 destinatarios: debe terminarse o cancelarse explícitamente antes de migrar. No recorta audiencias ni modifica datos silenciosamente. Esta entrega local no aplicó migraciones remotas ni cambió la configuración de envíos.
+
+Verificación: `npm run verify`; `npm run test:postgres` utiliza exclusivamente PostgreSQL local en `127.0.0.1:55439`, crea una base descartable y comprueba inicios concurrentes, exclusión mutua del worker y reparto entre campañas. Los datos y proveedores de prueba son sintéticos. Los recorridos de navegador se ejecutan desde el frontend con `KOI_API_REPOSITORY` apuntando a este repositorio.
+
+Resultado de validación local: 60 pruebas de API/migraciones y 7 de PostgreSQL real aprobadas.

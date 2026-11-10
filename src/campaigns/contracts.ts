@@ -3,7 +3,7 @@ import { z } from 'zod'
 export const campaignInput = z.object({
   name: z.string().trim().min(1).max(100), listId: z.uuid(),
   template: z.string().trim().min(1).max(4000),
-  recipientIds: z.array(z.uuid()).max(5000).default([]),
+  recipientIds: z.array(z.uuid()).max(100).default([]),
   config: z.object({
     intervalSeconds: z.number().int().min(1).max(86400),
     perMinute: z.number().int().min(1).max(60), perHour: z.number().int().min(1).max(3600), perDay: z.number().int().min(1).max(10000),

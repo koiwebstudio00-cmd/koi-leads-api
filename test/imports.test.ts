@@ -82,7 +82,7 @@ test('staging creates no leads; transactional commit reconciles selection and re
   assert.equal((await db.query('select * from public.koi_leads')).rows.length,0)
   payload = prepareCommit(draft,choices())
   result = await run(user, () => commit(draft.id,key,payload))
-  assert.deepEqual({ ...result,importId:'id',listId:'list' },{ importId:'id',listId:'list',total:5,selected:3,created:2,linked:0,alreadyLinked:0,duplicates:1,excluded:2,blocked:0 })
+  assert.deepEqual({ ...result,importId:'id',listId:'list' },{ updated:0,importId:'id',listId:'list',total:5,selected:3,created:2,linked:0,alreadyLinked:0,duplicates:1,excluded:2,blocked:0 })
   assert.equal((await db.query('select * from public.koi_leads')).rows.length,2)
   const rows = await db.query<{ original:{ cells:string[] } }>('select original from public.koi_import_rows order by source_row')
   assert.equal(rows.rows.length,5); assert.equal(rows.rows[0]!.original.cells[0],'  Ana  ')

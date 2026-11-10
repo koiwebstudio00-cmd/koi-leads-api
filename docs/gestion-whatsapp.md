@@ -36,3 +36,11 @@ El 10/11/2026 se aplicaron las tres migraciones de la entrega, se desplegaron AP
 1. Desde la bandeja se envió un texto a un número propio autorizado. Koi registró la entrega y mostró la respuesta de WhatsApp en vivo, sin recargar. Al volver a abrir el chat, la respuesta seguía visible y figuraba una sola vez.
 2. El PDF de prueba pasó por la cola y el worker de producción. Koi registró la entrega, mostró el adjunto tras recargar y permitió abrirlo. El destinatario confirmó que recibió el PDF en su teléfono.
 3. El PDF se encoló directamente para la prueba productiva. La selección de archivo desde el navegador se verificó en Playwright local y queda pendiente de comprobar en producción.
+
+## Audio en el chat y recuperación local
+
+Los audios grabados desde el navegador se pueden escuchar antes de enviarlos. La confirmación usa la misma cola que los audios adjuntos. La API acepta Ogg, MP3 o MP4 de hasta 4 MiB. El grabador detiene la captura a los 3 minutos. El chat muestra un reproductor dentro de la burbuja y permite descargar el archivo.
+
+Los adjuntos salientes guardados se leen desde la base. Para los entrantes, la API consulta Evolution. En desarrollo local, `KOI_RELAY_CHAT_MEDIA=true` permite recuperar los adjuntos desde `https://api-leads.koistudio.com.ar` cuando la API local no tiene una conexión directa a Evolution. La API verifica el acceso al chat antes de pedir el adjunto y la API del estudio verifica la misma sesión. La opción requiere que `KOI_APP_ORIGIN` sea local y se lee al iniciar el servidor.
+
+Se verificó el grabador y la cola con un micrófono simulado. En el entorno local se recuperaron dos audios entrantes reales de la bandeja del estudio y se comprobó que ambos cargaban el reproductor.

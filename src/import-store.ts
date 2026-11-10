@@ -72,11 +72,11 @@ export function createImportStore(client: SupabaseClient, workspace: string, use
       const { data: list, error: listError } = await client.from('koi_lead_lists').select('id').eq('workspace_id', workspace).eq('id', listId).maybeSingle()
       databaseError(listError)
       if (!list) throw new ApiError(404, 'No encontramos esa base.')
-      let query = client.from('koi_lead_list_members').select('lead:koi_leads!inner(id,phone,name,company,email,source,consent,revision)', { count: 'exact' }).eq('workspace_id', workspace).eq('list_id', listId).is('lead.deleted_at',null)
+      let query = client.from('koi_lead_list_members').select('lead:koi_leads!inner(id,phone,name,company,email,source,consent,revision,product,extra)', { count: 'exact' }).eq('workspace_id', workspace).eq('list_id', listId).is('lead.deleted_at',null)
       if (phone) query = query.ilike('lead.phone', `%${phone}%`)
       const { data, error, count } = await query.order('created_at', { ascending: false }).order('lead_id').range((page - 1) * 50, page * 50 - 1)
       databaseError(error)
-      const schema = z.array(z.object({ lead: z.object({ revision: z.number().int(), id: z.uuid(), phone: z.string(), name: z.string(), company: z.string(), email: z.string(), source: z.string(), consent: z.enum(['unknown','granted','denied']) }) }))
+      const schema = z.array(z.object({ lead: z.object({ revision: z.number().int(), id: z.uuid(), phone: z.string(), name: z.string(), company: z.string(), email: z.string(), source: z.string(), product: z.string(), extra: z.record(z.string(), z.string()), consent: z.enum(['unknown','granted','denied']) }) }))
       const leads = schema.parse(data).map(row => row.lead)
       if (!leads.length) return { leads: [], total: count ?? 0 }
       const { data: suppressed, error: suppressionError } = await client.from('koi_suppressions').select('phone').eq('workspace_id', workspace).in('phone', leads.map(lead => lead.phone))

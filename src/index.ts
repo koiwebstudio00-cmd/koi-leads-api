@@ -1,4 +1,4 @@
-import { createChatMedia, type SyncChatHistory } from './conversations.ts'
+import { createChatMedia, createChatMediaRelay, type SyncChatHistory } from './conversations.ts'
 import { conversationEvents } from './conversation-events.ts'
 import { createWhatsAppManager } from './whatsapp.ts'
 import { createApp } from './app.ts'
@@ -24,7 +24,7 @@ const syncChatHistory: SyncChatHistory | undefined = machine && chatProvider ? a
   if (messages.length) await machine.command('chat_history', { instance, events: messages })
   return { more: page < history.pages }
 } : undefined
-const server = createApp({ origin: config.KOI_APP_ORIGIN, authorize: createAuthorizer(config.KOI_SUPABASE_URL, config.KOI_SUPABASE_PUBLISHABLE_KEY), evolution, webhook, whatsapp, readChatMedia: chatProvider?.read, syncChatHistory })
+const server = createApp({ origin: config.KOI_APP_ORIGIN, authorize: createAuthorizer(config.KOI_SUPABASE_URL, config.KOI_SUPABASE_PUBLISHABLE_KEY), evolution, webhook, whatsapp, readChatMedia: chatProvider?.read, relayChatMedia: config.KOI_RELAY_CHAT_MEDIA === 'true' ? createChatMediaRelay() : undefined, syncChatHistory })
 server.listen(config.PORT, '0.0.0.0', () => console.log(`Koi API listening on ${config.PORT}`))
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {

@@ -41,7 +41,8 @@ export function suggestMapping(headers: string[]): Mapping {
 }
 
 export function normalizePhone(value: string, country: ImportChoices['country']): { phone: string; error: string; warning: string } {
-  const original = value.trim()
+  // Algunos exportadores agregan un apóstrofo para que Excel trate el número como texto.
+  const original = value.trim().replace(/^'(?=\+?\d)/, '')
   const invalid = (error: string) => ({ phone: '', error, warning: '' })
   if (!original) return invalid('Falta el teléfono.')
   if (/[^\d+().\s-]/.test(original) || !/^(?:\+|00)?[\d().\s-]+$/.test(original)) return invalid('Usá un teléfono en texto, sin letras, extensiones ni notación científica.')

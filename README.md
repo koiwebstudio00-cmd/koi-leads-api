@@ -52,6 +52,8 @@ Copiar `.env.example` y completar los valores en el entorno del servidor. No sub
 
 Las cuatro variables de Evolution se completan juntas. Si todas están vacías, la API funciona y devuelve `not_configured`; una configuración parcial impide el arranque. La API verifica cada token con Supabase y nunca usa una clave `service_role` para saltar RLS.
 
+Para escuchar archivos recibidos en el chat local con la base del estudio, configurá `KOI_RELAY_CHAT_MEDIA=true` en la API. La descarga se hace desde la API de Koi con la sesión del usuario. Esta opción solo se admite con un origen local.
+
 ## Despliegue desde GitHub en Dokploy
 
 1. Crear o abrir la Application `koi-api`.
@@ -152,3 +154,31 @@ En una instalación que todavía tenga pendiente la segunda migración, una camp
 Verificación: `npm run verify`; `npm run test:postgres` utiliza exclusivamente PostgreSQL local en `127.0.0.1:55439`, crea una base descartable y comprueba inicios concurrentes, exclusión mutua del worker, reparto entre campañas y el flujo de Conversaciones. Los datos y proveedores de prueba son sintéticos. Los recorridos de navegador se ejecutan desde el frontend con `KOI_API_REPOSITORY` apuntando a este repositorio.
 
 Resultado de validación local de la entrega con Conversaciones: 60 pruebas de API/migraciones y 9 de PostgreSQL real aprobadas.
+
+## Seguimientos e inbox — 10/11/2026
+
+Migración aplicada: `20261110112004_koi_followups_inbox.sql`.
+
+- Los mensajes entrantes nuevos, no históricos, avanzan Nuevo/Contactado a Respondió. No retroceden etapas posteriores ni convierten bajas en interés. Se reconciliaron respuestas no históricas ya guardadas.
+- La métrica de contactados y lastContactAt incluyen campañas y chats aceptados; un mismo lead cuenta una sola vez. Aceptado no implica entregado ni leído.
+- El lead es la referencia del responsable. Cambiarlo actualiza todos sus chats; asignar desde un chat vinculado actualiza la ficha y sus otros chats. Sin lead, el chat conserva asignación independiente. La asignación es opcional y no restringe la visibilidad del equipo.
+- GET /api/conversations admite owner=all|mine|unassigned y pendingReply=true|false, combinados con filtros existentes. Pendiente significa que el último mensaje no histórico relevante es entrante; un saliente solo lo resuelve al quedar aceptado. Leer no resuelve una respuesta pendiente y las bajas no aparecen en esa vista.
+- GET /api/crm/tasks admite view=pending|today|overdue|completed, owner=all|mine|unassigned, leadId, search y page. Páginas de 30. Hoy usa Argentina; Vencidas incluye fechas y horas ya pasadas.
+- POST /api/crm/tasks exige Idempotency-Key y leadId/title/dueAt (fecha nullable). PATCH /api/crm/tasks/:id exige revision y permite título, fecha y estado pending/completed. RLS, controles de revisión y permisos por columna protegen las tareas.
+- Las próximas acciones previas se migran a tareas. La próxima acción de la ficha/tabla/Kanban resume la tarea pendiente más próxima. Las tareas heredan el responsable actual del lead; completar no borra el historial y permite reabrir.
+
+Validación: 65 pruebas de API, 78 de frontend y 18 recorridos de navegador cubiertos en las ejecuciones de la entrega. Pruebas sintéticas; no se realizaron envíos reales. El arranque local usa la base Supabase existente; API y frontend se ejecutan aparte del worker productivo.
+
+## Mensajes guardados — 10/11/2026
+
+/mensajes es la biblioteca compartida del estudio: título, categoría editable y texto de hasta 4000 caracteres. Incluye búsqueda literal por título/contenido/categoría, filtro por categoría, paginación de 30, copiar al portapapeles, editar y archivar/restaurar. Las sugerencias son Apertura, Seguimiento, Negativa, Objeciones, Propuesta y Cierre; se admiten categorías propias.
+
+Los textos se copian tal como se guardan, sin sustituir variables ni iniciar envíos. El editor de campañas y el chat permiten elegir un mensaje guardado y editar el borrador. En campañas se sustituyen las variables en la vista previa; el chat las completa con la ficha vinculada. No se agregan mensajes de ejemplo a los datos reales.
+
+API: GET/POST /api/crm/messages y PATCH /api/crm/messages/:id. La creación requiere Idempotency-Key; la edición requiere revision para evitar sobrescrituras concurrentes. Persistencia compartida con RLS por workspace, disponible para miembros del equipo. Requiere la migración 20261110114637_koi_saved_messages.sql, aplicada al Supabase de Koi, y frontend/API actualizados. Los servicios locales siguen en localhost:5173 y 127.0.0.1:3001; esta entrega no despliega frontend ni API productivos.
+
+## Importación y datos de prospectos
+
+El normalizador acepta un apóstrofo de planilla al comienzo del teléfono y valida el número resultante. `GET /api/lead-lists/:id/leads` devuelve producto y columnas importadas adicionales (`extra`) junto a los datos de contacto. El listado conserva la paginación de 50 y el filtro por teléfono.
+
+Los dos cambios de esquema de esta entrega se aplicaron al proyecto Supabase de Koi, en orden: `20261110112004_koi_followups_inbox.sql` y `20261110114637_koi_saved_messages.sql`. En otro entorno, aplicarlos en ese orden antes de iniciar la API actualizada.

@@ -54,14 +54,41 @@ export function validAttachment(base64: string, mime: string) {
 
 type MediaLookup = { instance: string; providerId: string }
 export type ReadChatMedia = (lookup: MediaLookup) => Promise<string>
+type AttachmentLookup = { id: string; messageId: string }
+export type RelayChatMedia = (token: string, lookup: AttachmentLookup) => Promise<ChatAttachment>
+
+export function createChatMediaRelay(request: typeof fetch = fetch): RelayChatMedia {
+  return async (token, { id, messageId }) => {
+    const url = new URL('/api/conversations/' + encodeURIComponent(id) + '/attachment', 'https://api-leads.koistudio.com.ar')
+    url.searchParams.set('messageId', messageId)
+    try {
+      const response = await request(url, {
+        headers: { Authorization: 'Bearer ' + token, Accept: 'application/json' },
+        signal: AbortSignal.timeout(24_000),
+        redirect: 'error',
+      })
+      if (!response.ok) {
+        await response.body?.cancel()
+        if (response.status === 404) throw new ApiError(404, 'No encontramos este archivo en WhatsApp.')
+        if (response.status === 422) throw new ApiError(422, 'WhatsApp ya no tiene este archivo disponible o devolvió un formato incompatible.')
+        throw new ApiError(502, 'La API del estudio no pudo recuperar el archivo de WhatsApp.')
+      }
+      return attachmentInput.parse(await boundedProviderJson(response))
+    } catch (error) {
+      if (error instanceof ApiError) throw error
+      throw new ApiError(502, 'No pudimos recuperar el archivo desde la API del estudio.')
+    }
+  }
+}
 export type SyncChatHistory = (target: { instance: string; peer: string }, page: number) => Promise<{ more: boolean }>
 
-export async function chatRoute(request: IncomingMessage, url: URL, command: ChatCommand, readBody: (limit?: number) => Promise<unknown>, readMedia?: ReadChatMedia, syncHistory?: SyncChatHistory) {
+export async function chatRoute(request: IncomingMessage, url: URL, command: ChatCommand, readBody: (limit?: number) => Promise<unknown>, readMedia?: ReadChatMedia, syncHistory?: SyncChatHistory, relayMedia?: (lookup: AttachmentLookup) => Promise<ChatAttachment>) {
   const path = url.pathname.slice('/api/conversations'.length)
   if (path === '/accounts' && request.method === 'GET') return { status: 200, data: await command('accounts', {}) }
   if (path === '' && request.method === 'GET') {
     const input = z.object({
       search: z.string().trim().max(100).default(''), page: z.coerce.number().int().min(1).max(10000).default(1),
+      owner:z.enum(['all','mine','unassigned']).default('all'), pendingReply:z.enum(['true','false']).default('false'),
       archived: z.enum(['true','false']).default('false'), unread: z.enum(['true','false']).default('false'), instanceId: account.optional(),
     }).strict().parse(Object.fromEntries(url.searchParams))
     return { status: 200, data: await command('list', input) }
@@ -87,9 +114,24 @@ export async function chatRoute(request: IncomingMessage, url: URL, command: Cha
     const messageId = z.uuid().parse(url.searchParams.get('messageId'))
     const file = z.object({ filename: z.string().nullable(), mime: attachmentMime, base64: z.string().nullable(),
       instance: z.string(), providerId: z.string().nullable() }).parse(await command('attachment', { id, messageId }))
-    const base64 = file.base64 ?? (readMedia && file.providerId ? await readMedia({ instance: file.instance, providerId: file.providerId }) : '')
-    if (!validAttachment(base64, file.mime)) throw new ApiError(422, 'El archivo ya no está disponible o tiene un formato incompatible.')
-    return { status: 200, data: { name: file.filename || 'Adjunto de WhatsApp', mime: file.mime, base64 } }
+    const name = file.filename || 'Adjunto de WhatsApp'
+    let attachment: ChatAttachment
+    if (file.base64) {
+      attachment = { name, mime: file.mime, base64: file.base64 }
+    } else if (file.providerId && readMedia) {
+      const base64 = await readMedia({ instance: file.instance, providerId: file.providerId })
+      attachment = { name, mime: file.mime, base64 }
+    } else if (file.providerId && relayMedia) {
+      attachment = await relayMedia({ id, messageId })
+    } else if (!file.providerId) {
+      throw new ApiError(404, 'No encontramos este archivo en WhatsApp.')
+    } else {
+      throw new ApiError(503, 'La API no tiene una conexión para recuperar este archivo de WhatsApp.')
+    }
+    if (!validAttachment(attachment.base64, attachment.mime)) {
+      throw new ApiError(422, 'El archivo ya no está disponible o tiene un formato incompatible.')
+    }
+    return { status: 200, data: attachment }
   }
   if (request.method === 'PATCH' && !match[2]) {
     const patch = z.object({ archived: z.boolean().optional(), assignedTo: z.uuid().nullable().optional() }).strict().parse(await readBody())

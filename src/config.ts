@@ -9,6 +9,7 @@ const configSchema = z.object({
   KOI_APP_ORIGIN: z.url().refine(value => new URL(value).origin === value, 'Usá el origen sin path ni barra final'),
   KOI_SUPABASE_URL: z.url().refine(value => value === 'https://avqhjbrcbgqhelfkcist.supabase.co', 'Debe ser el proyecto Koi aprobado'),
   KOI_SUPABASE_PUBLISHABLE_KEY: z.string().startsWith('sb_publishable_').min(25),
+  KOI_RELAY_CHAT_MEDIA: optional(z.enum(['true', 'false'])),
   EVOLUTION_PUBLIC_URL: optional(z.url().refine(value => {
     const url = new URL(value)
     return url.protocol === 'https:' && url.origin === value
@@ -17,6 +18,10 @@ const configSchema = z.object({
   EVOLUTION_INSTANCE_NAME: optional(z.string().regex(/^[A-Za-z0-9_-]{1,100}$/)),
   KOI_EVOLUTION_WORKSPACE_ID: optional(z.uuid()),
 }).superRefine((value, context) => {
+  if (value.KOI_RELAY_CHAT_MEDIA === 'true' && (!URL.canParse(value.KOI_APP_ORIGIN) ||
+    !['localhost', '127.0.0.1', '[::1]'].includes(new URL(value.KOI_APP_ORIGIN).hostname))) {
+    context.addIssue({ code: 'custom', path: ['KOI_RELAY_CHAT_MEDIA'], message: 'Disponible solo para la app local' })
+  }
   if (Boolean(value.KOI_WEBHOOK_DATABASE_URL) !== Boolean(value.KOI_EVOLUTION_WEBHOOK_SECRET) || (value.KOI_WEBHOOK_DATABASE_URL && !value.EVOLUTION_INSTANCE_NAME)) context.addIssue({ code: 'custom', path: ['KOI_WEBHOOK_DATABASE_URL'], message: 'Completá la configuración del webhook' })
   const fields = ['EVOLUTION_PUBLIC_URL', 'EVOLUTION_API_KEY', 'EVOLUTION_INSTANCE_NAME', 'KOI_EVOLUTION_WORKSPACE_ID'] as const
   if (fields.some(field => value[field] !== undefined)) {

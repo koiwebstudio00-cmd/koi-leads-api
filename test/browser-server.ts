@@ -47,7 +47,13 @@ const store:UserStore = {
     try { return (await tx.query<{result:unknown}>('select koi_chat_command($1,$2) as result',[action,JSON.stringify(data)])).rows[0]!.result }
     catch (error) { chatError(error as {code?:string;message?:string}) }
   }),
-  crm:(action,data) => query(async tx => (await tx.query<{result:unknown}>('select koi_crm_command($1,$2) as result',[action,JSON.stringify(data)])).rows[0]!.result),
+  crm:(action,data) => query(async tx => {
+    if (action === 'campaign_recipients') {
+      return (await tx.query<{result:unknown}>('select koi_campaign_recipient_picker($1,$2,$3,$4,$5,$6) as result',
+        [data.listId,data.search,data.province,data.contact,data.page,data.selected??null])).rows[0]!.result
+    }
+    return (await tx.query<{result:unknown}>('select koi_crm_command($1,$2) as result',[action,JSON.stringify(data)])).rows[0]!.result
+  }),
   campaigns:(action,data) => query(async tx => (await tx.query<{result:unknown}>('select koi_campaign_command($1,$2) as result',[action,JSON.stringify(data)])).rows[0]!.result),
   userId:user,membership:{ workspace_id:workspace,workspace_name:'Estudio Koi',role:'admin' },
   list:(page,search) => query(async tx => ({ lists:(await tx.query<LeadList>('select * from koi_lead_lists where name ilike $1 order by created_at desc,id desc limit 24 offset $2',[`%${search}%`,(page-1)*24])).rows,total:Number((await tx.query<{ n:number }>('select count(*) as n from koi_lead_lists where name ilike $1',[`%${search}%`])).rows[0]!.n) })),

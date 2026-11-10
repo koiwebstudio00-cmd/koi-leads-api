@@ -182,3 +182,7 @@ API: GET/POST /api/crm/messages y PATCH /api/crm/messages/:id. La creación requ
 El normalizador acepta un apóstrofo de planilla al comienzo del teléfono y valida el número resultante. `GET /api/lead-lists/:id/leads` devuelve producto y columnas importadas adicionales (`extra`) junto a los datos de contacto. El listado conserva la paginación de 50 y el filtro por teléfono.
 
 Los dos cambios de esquema de esta entrega se aplicaron al proyecto Supabase de Koi, en orden: `20261110112004_koi_followups_inbox.sql` y `20261110114637_koi_saved_messages.sql`. En otro entorno, aplicarlos en ese orden antes de iniciar la API actualizada.
+
+## Selección de destinatarios de campaña
+
+GET /api/crm/campaign-recipients consulta una base del espacio con filtros de búsqueda, provincia e historial de contacto. Devuelve 25 filas por página y hasta 100 IDs elegibles para formar tandas a través de todas las páginas. El historial usa envíos aceptados de campañas y chats. Requiere la migración 20261110175455_koi_campaign_recipient_picker.sql.

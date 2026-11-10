@@ -32,7 +32,16 @@ export function crmError(error:{code?:string}|null) {
   throw new ApiError(503,'No pudimos consultar los contactos. Volvé a intentar.')
 }
 export function createCrmStore(client:SupabaseClient):CrmCommand {
-  return async(action,data)=>{const result=await client.rpc('koi_crm_command',{p_action:action,p_data:data});if(result.error && (action==='messages'||action.startsWith('message_'))){
+  return async(action,data)=>{
+    if (action === 'campaign_recipients') {
+      const result = await client.rpc('koi_campaign_recipient_picker', {
+        p_list: data.listId, p_search: data.search, p_province: data.province,
+        p_contact: data.contact, p_page: data.page, p_selected: data.selected ?? null,
+      })
+      crmError(result.error)
+      return result.data
+    }
+    const result=await client.rpc('koi_crm_command',{p_action:action,p_data:data});if(result.error && (action==='messages'||action.startsWith('message_'))){
     const code=result.error.code
     if(code==='PT409'||code==='23505')throw new ApiError(409,'El mensaje cambió desde que lo abriste. Cerrá el editor, actualizá la lista y volvé a intentar.')
     if(code==='PT404')throw new ApiError(404,'No encontramos ese mensaje.')
@@ -43,6 +52,18 @@ export function createCrmStore(client:SupabaseClient):CrmCommand {
 }
 export async function crmRoute(request:IncomingMessage,url:URL,command:CrmCommand,readBody:()=>Promise<unknown>) {
   const path=url.pathname.replace('/api/crm','')
+  if (path === '/campaign-recipients' && request.method === 'GET') {
+    const query = z.object({
+      listId: z.uuid(),
+      search: z.string().trim().max(100).default(''),
+      province: z.string().trim().max(1000).default(''),
+      contact: z.enum(['all', 'contacted', 'uncontacted']).default('all'),
+      page: z.coerce.number().int().min(1).max(10000).default(1),
+      selected: z.string().max(3700).transform(value => value ? value.split(',') : [])
+        .pipe(z.array(z.uuid()).max(100)).optional(),
+    }).strict().parse(Object.fromEntries(url.searchParams))
+    return { status: 200, data: await command('campaign_recipients', query) }
+  }
   const messageFields=z.object({title:z.string().trim().min(1).max(120),category:z.string().trim().min(1).max(40),body:z.string().trim().min(1).max(4000)}).strict()
   if(path==='/messages'&&request.method==='GET')return {status:200,data:await command('messages',z.object({search:z.string().trim().max(100).default(''),category:z.string().max(40).default(''),archived:z.enum(['true','false']).default('false').transform(v=>v==='true'),page:z.coerce.number().int().min(1).max(100000).default(1)}).strict().parse(Object.fromEntries(url.searchParams)))}
   if(path==='/messages'&&request.method==='POST')return {status:201,data:await command('message_create',{...messageFields.parse(await readBody()),key:z.uuid().parse(request.headers['idempotency-key'])})}

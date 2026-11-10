@@ -2,8 +2,8 @@
 
 La pantalla **WhatsApp** permite a administradores crear una conexión adicional, vincular mediante QR, reconectar una sesión y desconectarla tras confirmación. Los operadores solo consultan estados.
 
-- `koi-01` conserva su configuración, webhook y función de remitente de campañas. No se desconecta ni reinicia durante el despliegue.
-- Las nuevas instancias son sesiones adicionales; no se asignan automáticamente al worker ni reciben el webhook de campañas. La elección de múltiples remitentes para campañas sigue fuera del alcance actual.
+- `koi-01` es el remitente de campañas y la instancia verificada con Conversaciones en producción.
+- Las sesiones adicionales se registran al vincularlas. Para recibir eventos en Conversaciones requieren configurar el webhook en Evolution por instancia. Las campañas siguen usando el remitente principal.
 - Los nombres visibles son editables al crear; el identificador Evolution lo genera PostgreSQL a partir de un UUID no elegible por el cliente. La API nunca admite URLs, claves o nombres arbitrarios de instancias.
 - El registro persiste en `koi_whatsapp_instances`, aislado por RLS y workspace. Solo admin puede insertar. No hay permisos de actualización o borrado desde Data API. Hasta 10 sesiones adicionales por espacio.
 - Un alta interrumpida conserva su registro: **Vincular con QR** comprueba la existencia en Evolution y completa la provisión. La clave de idempotencia evita duplicar el alta ante reintentos idénticos.
@@ -15,8 +15,24 @@ La pantalla **WhatsApp** permite a administradores crear una conexión adicional
 
 ## Despliegue
 
-Aplicar `koi_whatsapp_instances`, desplegar API desde el repo backend y frontend desde su repo. No hacen falta variables ni credenciales nuevas. El health de la API anuncia `whatsapp-instances-v1`. Los envíos de campañas permanecen con la configuración previa (`KOI_SEND_ENABLED=false`).
+La migración `koi_whatsapp_instances` está aplicada en producción. El health de la API anuncia `whatsapp-instances-v1`. El despliegue de Conversaciones usa las credenciales existentes de Evolution, del worker y del webhook. [Configuración y orden de despliegue](despliegue-campanas.md).
 
 ## Marca y tema
 
 Frontend: tema [CliniDS de tweakcn](https://tweakcn.com/r/themes/cmkybzyzr000004l515sz2eox), instalado con shadcn. Roboto se sirve localmente. Símbolo original de [Koi Studio](https://koistudio.com.ar/assets/brand/koi-symbol.png); WhatsApp mediante Simple Icons. Se conserva la distribución del dashboard, importaciones y campañas.
+
+## Conversaciones
+
+- Desde **Conversaciones → Nuevo chat** se puede buscar un lead y elegir una cuenta de WhatsApp. La bandeja permite buscar, filtrar no leídos y archivados, asignar un responsable y consultar el historial disponible en Evolution desde la ficha del chat.
+- Se admite texto, imágenes JPG/PNG, PDF y audio OGG, MP3 o MP4 de hasta 4 MiB por archivo. El audio y el texto se envían por separado. La API valida el formato y controla el acceso al adjunto por conversación y espacio.
+- La API autenticada de `/api/conversations` consulta y encola mensajes. El worker realiza el envío a Evolution con idempotencia y sin repetir resultados inciertos. Los estados de entrega llegan por el webhook. Aceptado, entregado y leído son estados distintos.
+- Supabase Realtime publica cambios de `public.koi_conversations` en `supabase_realtime`. El navegador se suscribe por espacio y vuelve a consultar la API. Si se pierde la suscripción, recurre a consultas periódicas.
+- El alcance actual cubre chats individuales de WhatsApp. Agentes de IA, Instagram y TikTok quedan para etapas posteriores.
+
+### Verificación en producción
+
+El 10/11/2026 se aplicaron las tres migraciones de la entrega, se desplegaron API y worker en Dokploy con `6a7b672` y el frontend en Vercel con `090646b`. Se comprobó el latido del worker y se agregó `SEND_MESSAGE` al webhook de `koi-01`.
+
+1. Desde la bandeja se envió un texto a un número propio autorizado. Koi registró la entrega y mostró la respuesta de WhatsApp en vivo, sin recargar. Al volver a abrir el chat, la respuesta seguía visible y figuraba una sola vez.
+2. El PDF de prueba pasó por la cola y el worker de producción. Koi registró la entrega, mostró el adjunto tras recargar y permitió abrirlo. El destinatario confirmó que recibió el PDF en su teléfono.
+3. El PDF se encoló directamente para la prueba productiva. La selección de archivo desde el navegador se verificó en Playwright local y queda pendiente de comprobar en producción.

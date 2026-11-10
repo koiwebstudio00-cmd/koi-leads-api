@@ -14,6 +14,7 @@ Backend independiente de Koi Leads, con Node.js 24 y TypeScript. Este repositori
 - Campañas de texto, selección, variables, vista previa y arranque idempotente.
 - Cola PostgreSQL, worker independiente, horarios/límites persistentes y pausa/reanudación/cancelación.
 - Webhooks autenticados, entrega/lectura, bajas y recuperación conservadora de envíos inciertos.
+- Conversaciones individuales de WhatsApp en vivo, con historial, texto y archivos mediante el worker. [Guía de operación](docs/gestion-whatsapp.md#conversaciones).
 
 Para activar el worker y el webhook en Dokploy: **[guía de despliegue de campañas](docs/despliegue-campanas.md)**. El código no habilita envíos por sí solo; `KOI_SEND_ENABLED` comienza en `false`. `src/import-worker.ts` sigue siendo exclusivo del análisis de archivos; el nuevo proceso de campañas es `src/worker.ts`.
 
@@ -133,9 +134,9 @@ El trigger actualiza la etapa dentro de la transacción que registra el resultad
 Para desarrollo local, configurar `KOI_APP_ORIGIN=http://localhost:5173`, iniciar la API con `npm run dev` y el frontend en otra terminal. El worker se inicia por separado con `npm run worker` y requiere la configuración de la guía de despliegue. Los procesos locales quedan detenidos al cerrar esta entrega. Un commit no despliega servicios ni ejecuta migraciones.
 
 
-## Gestión de leads y dos campañas — 9/11/2026
+## Gestión de leads y dos campañas
 
-Esta entrega agrega dos migraciones nuevas, pendientes de aplicación en producción:
+Migraciones aplicadas en producción el 10/11/2026:
 
 - `20261110024130_koi_lead_management.sql`: producto (`cubiko`, `zyro`, `toki`, `estudio` o sin asignar), resumen de inicio, altas idempotentes, edición/eliminación masiva con revisión y actualización explícita de campos al importar.
 - `20261110024132_koi_two_campaigns.sql`: dos cupos activos por workspace y reparto de trabajo entre campañas elegibles. Programadas, en ejecución y pausadas ocupan cupo. Terminar o cancelar libera el cupo. Cada campaña admite hasta 100 destinatarios; no limita la cantidad total de borradores, campañas históricas ni leads registrados.
@@ -146,8 +147,8 @@ Los envíos conservan el número principal y sus límites existentes: 100 intent
 
 `GET /api/crm/summary` cuenta contactos únicos, contactos con al menos un envío aceptado y campañas por estado. Aceptación no equivale a entrega ni lectura.
 
-Antes de publicar: detener el worker, aplicar las dos migraciones en orden, desplegar API y frontend compatibles y reiniciar el worker con su configuración existente. La segunda migración se detiene si hay una campaña activa con más de 100 destinatarios: debe terminarse o cancelarse explícitamente antes de migrar. No recorta audiencias ni modifica datos silenciosamente. Esta entrega local no aplicó migraciones remotas ni cambió la configuración de envíos.
+En una instalación que todavía tenga pendiente la segunda migración, una campaña activa con más de 100 destinatarios impide aplicarla. Hay que terminarla o cancelarla antes de migrar. Consultar el orden de actualización en la [guía de despliegue](docs/despliegue-campanas.md#1-migraciones).
 
-Verificación: `npm run verify`; `npm run test:postgres` utiliza exclusivamente PostgreSQL local en `127.0.0.1:55439`, crea una base descartable y comprueba inicios concurrentes, exclusión mutua del worker y reparto entre campañas. Los datos y proveedores de prueba son sintéticos. Los recorridos de navegador se ejecutan desde el frontend con `KOI_API_REPOSITORY` apuntando a este repositorio.
+Verificación: `npm run verify`; `npm run test:postgres` utiliza exclusivamente PostgreSQL local en `127.0.0.1:55439`, crea una base descartable y comprueba inicios concurrentes, exclusión mutua del worker, reparto entre campañas y el flujo de Conversaciones. Los datos y proveedores de prueba son sintéticos. Los recorridos de navegador se ejecutan desde el frontend con `KOI_API_REPOSITORY` apuntando a este repositorio.
 
-Resultado de validación local: 60 pruebas de API/migraciones y 7 de PostgreSQL real aprobadas.
+Resultado de validación local de la entrega con Conversaciones: 60 pruebas de API/migraciones y 9 de PostgreSQL real aprobadas.

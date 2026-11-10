@@ -13,14 +13,14 @@ API y worker se despliegan desde **koiwebstudio00-cmd/koi-leads-api**, como dos 
 - Recepción autenticada de estados, deduplicación, entrega/lectura sin retroceder y bajas explícitas antes de responder al webhook.
 - Panel con actualización cada 3 segundos, destinatarios, actividad inicial y exportación CSV.
 
-## Estado desplegado al 6/11/2026
+## Estado desplegado al 10/11/2026
 
 - Frontend y API actualizados desde sus repositorios separados.
 - `koi-worker` creado en Dokploy y desplegado con `Dockerfile.worker`: contenedor saludable y latido confirmado en Supabase.
 - Credenciales limitadas de worker y webhook provisionadas, probadas y cargadas en los servicios correspondientes. La URI administrativa no se cargó en Dokploy.
-- Webhook habilitado en `koi-01`, con los tres eventos y header privado indicados abajo. Su configuración fue leída nuevamente desde Evolution para verificarla.
-- Endpoint comprobado: 401 sin secreto, 200 para un evento vacío autenticado y 403 para una instancia distinta. Estas pruebas no enviaron mensajes ni simularon estados de destinatarios.
-- **`KOI_SEND_ENABLED=false`**. No se hizo todavía un envío real desde este worker; falta la prueba controlada del apartado 6 y verificar sus recibos de entrega/lectura.
+- Webhook habilitado en `koi-01`, con los cuatro eventos y el header privado indicados abajo. Su configuración fue leída nuevamente desde Evolution para verificarla.
+- En la instalación inicial se comprobó el rechazo de solicitudes sin secreto o con una instancia ajena y la aceptación de un evento vacío autenticado.
+- **`KOI_SEND_ENABLED=true`** y latido del worker verificado tras el despliegue. La prueba de Conversaciones verificó texto y PDF entregados y una respuesta entrante en vivo. [Registro de la prueba](gestion-whatsapp.md#verificación-en-producción).
 
 Los apartados 1 a 5 documentan la instalación ya realizada. **No volver a generar credenciales ni crear otro worker** para esta instalación.
 
@@ -32,7 +32,13 @@ Ya aplicadas en el proyecto Supabase de Koi `avqhjbrcbgqhelfkcist` el 6/11/2026:
 - `koi_campaign_immediate_optout`
 - `koi_campaign_jwt_context` (compatible con el esquema Auth administrado de Supabase)
 
-No volver a pegar las migraciones sobre esa base. Las tablas de importación y sus datos se conservan. Las credenciales del worker y webhook usan roles separados sin acceso directo a tablas; las migraciones los crean sin LOGIN y la provisión ya realizada habilitó sus credenciales limitadas.
+El 10/11/2026 se aplicaron, en este orden:
+
+1. `20261110024130_koi_lead_management.sql`
+2. `20261110024132_koi_two_campaigns.sql`
+3. `20261110034259_koi_whatsapp_conversations.sql`
+
+En un entorno que todavía deba aplicarlas, detener el worker y comprobar que no haya envíos en curso ni bloqueos por resultados inciertos. Aplicar solo migraciones pendientes, desplegar API y worker desde el mismo commit y después desplegar el frontend compatible. Comprobar el latido del worker y configurar o verificar el webhook. Las credenciales del worker y del webhook usan roles separados con permisos limitados y se conservan durante la actualización.
 
 ## 2. Generar las credenciales una vez
 
@@ -102,7 +108,7 @@ Configurar **solo la instancia `koi-01`** con:
 - Webhook by events: no
 - Base64: no
 - Header `X-Koi-Webhook-Secret`: el valor de `KOI_EVOLUTION_WEBHOOK_SECRET` generado para la API.
-- Eventos: `MESSAGES_UPDATE`, `MESSAGES_UPSERT`, `CONNECTION_UPDATE`.
+- Eventos: `MESSAGES_UPDATE`, `MESSAGES_UPSERT`, `CONNECTION_UPDATE`, `SEND_MESSAGE`.
 
 Evolution 2.3.7 admite headers por instancia. Si el Manager no permite cargar el header, usar `POST /webhook/set/koi-01` con la API key de Evolution en header `apikey` y este cuerpo (reemplazar el secreto localmente):
 
@@ -114,14 +120,16 @@ Evolution 2.3.7 admite headers por instancia. Si el Manager no permite cargar el
     "headers": { "X-Koi-Webhook-Secret": "SECRETO_GENERADO" },
     "byEvents": false,
     "base64": false,
-    "events": ["MESSAGES_UPDATE", "MESSAGES_UPSERT", "CONNECTION_UPDATE"]
+    "events": ["MESSAGES_UPDATE", "MESSAGES_UPSERT", "CONNECTION_UPDATE", "SEND_MESSAGE"]
   }
 }
 ```
 
 No poner el secreto en la URL. La API responde 401 antes de leer el cuerpo si falta/no coincide el header, y 503 si todavía no se configuró la recepción.
 
-## 6. Prueba controlada y activación
+## 6. Prueba controlada y activación inicial
+
+El procedimiento parte de un worker con envíos deshabilitados en una instalación nueva. Para verificar Conversaciones en la instalación actual, seguir el [recorrido de WhatsApp](gestion-whatsapp.md#verificación-en-producción).
 
 1. Importar una base con **un teléfono propio**, consentimiento y evidencia de prueba.
 2. Crear campaña, elegir ese único contacto y un texto reconocible; revisar mensaje y horario.
@@ -135,10 +143,11 @@ Topes iniciales del servidor: mínimo 30 s entre mensajes, máximo 2/min, 60/h y
 
 ## Operación y límites de esta entrega
 
-- Texto, una instancia y una campaña activa a la vez. Las pausadas también ocupan ese lugar.
-- No hay reintento automático de POST ambiguos ni de destinatarios fallidos. Se preserva el resultado para revisión.
-- Solo se envía a contactos con consentimiento confirmado y sin bajas. Las exclusiones se revisan nuevamente justo antes del despacho.
-- Bajas reconocidas: `baja`, `stop`, `no me contacten`, `no me escriban más` / `mas`, en mensajes entrantes con teléfono inequívoco (`@s.whatsapp.net`). Los JID `@lid` no se convierten a números por conjetura; requieren revisión externa. No hay inbox/respuestas generales en esta versión.
+- Campañas de texto desde el número principal. Hasta dos campañas activas por espacio y 100 destinatarios por campaña. Las programadas, en ejecución y pausadas ocupan cupo. Completar o cancelar libera el cupo.
+- Los chats manuales desde el número principal comparten con las campañas los límites de frecuencia y la exclusión mutua del remitente.
+- Los resultados ambiguos se conservan para revisión. Los POST ambiguos y los destinatarios fallidos requieren intervención manual.
+- El consentimiento registrado es informativo. Las bajas explícitas excluyen al contacto y se vuelven a comprobar antes del despacho.
+- Bajas reconocidas: `baja`, `stop`, `no me contacten`, `no me escriban más` / `mas`, en mensajes entrantes con teléfono inequívoco (`@s.whatsapp.net`). Un JID `@lid` requiere un identificador alternativo que confirme el teléfono para asociarlo a un lead.
 - Historial en pantalla: primeros 100 eventos; API con cursor `after` para consultar el resto. Exportación de estado de hasta 5.000 destinatarios.
 - Los recibos sin asociación quedan pendientes para tolerar que lleguen antes de la respuesta HTTP. Falta una política automática de retención de esos eventos y del historial; monitorear crecimiento.
 - Vista previa aproximada de texto/formato de WhatsApp, no plantilla oficial de Meta ni reproducción idéntica en todos los dispositivos.

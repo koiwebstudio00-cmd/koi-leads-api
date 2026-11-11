@@ -99,9 +99,8 @@ test('crash before send is recoverable; crash after begin is unknown and never a
  assert.equal(await machine('begin',{id:job.id,token:job.lease_token}),null)
  await machine('begin',{id:retry.id,token:retry.lease_token})
  await db.query("update koi_campaign_recipients set lease_until=now()-interval '1 second' where id=$1",[retry.id]);await machine('tick',{enabled:true})
- const detail=await api('detail',{id:c.id});assert.equal(detail.campaign.status,'paused');assert.equal(detail.counts.unknown,1)
- assert.equal(await machine('claim'),null);await assert.rejects(api('resume',{id:c.id}),/Cannot resume/)
- await api('resolve',{id:c.id,recipientId:retry.id,decision:'do_not_resend'});await api('resume',{id:c.id});await releaseRate()
+ const detail=await api('detail',{id:c.id});assert.equal(detail.campaign.status,'running');assert.equal(detail.counts.unknown,1);assert.equal(detail.reviewPending,1)
+ await releaseRate()
  const remaining=await machine('claim');assert.notEqual(remaining.id,retry.id)
 })
 test('persisted rate budget and local schedule cannot be bypassed by restart',async()=>{

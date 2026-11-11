@@ -92,7 +92,12 @@ const store:UserStore = {
     report:id => query(async tx => { await draft(tx,id); return (await tx.query('select source_row,selected,outcome,prepared from koi_import_rows where import_id=$1 order by source_row',[id])).rows }),
   },
 }
-const server = createApp({ webhook:createWebhook('synthetic-chat-hook-test-only','test-only',inbound,true), origin:'http://127.0.0.1:4179',authorize:async token => {
+const server = createApp({
+  readChatMedia: async ({providerId}) => {
+    if (providerId!=='sticker-e2e') throw new ApiError(404,'Archivo de prueba no encontrado.')
+    return 'UklGRkoAAABXRUJQVlA4ID4AAABQAwCdASoYABgAPm00lkekIyIhKAgAgA2JZQB2APwAAIMoIAD+7xUH//3eb9vN+3m/4aP//npmvMH9NAAAAA=='
+  },
+  webhook:createWebhook('synthetic-chat-hook-test-only','test-only',inbound,true), origin:'http://127.0.0.1:4179',authorize:async token => {
   if (!token.endsWith('.synthetic-koi')) throw new ApiError(401,'Token de prueba requerido.')
   return store
 } })

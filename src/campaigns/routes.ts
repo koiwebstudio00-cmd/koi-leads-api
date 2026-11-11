@@ -16,7 +16,7 @@ export async function campaignRoute(request: IncomingMessage, url: URL, command:
   const id = z.uuid().parse(match[1]); const action = match[2]
   if (request.method === 'GET') {
     if (!action || action === 'progress') return { status: 200, data: await command('detail', { id }) }
-    if (action === 'recipients') return { status: 200, data: await command('recipients', { id, page: page(), status: z.enum(['','queued','leased','sending','accepted','unknown','failed','skipped','cancelled']).parse(url.searchParams.get('status') ?? '') }) }
+    if (action === 'recipients') return { status: 200, data: await command('recipients', { id, page: page(), status: z.enum(['','queued','leased','sending','accepted','unknown','failed','skipped','cancelled','review']).parse(url.searchParams.get('status') ?? '') }) }
     if (action === 'events') return { status: 200, data: await command('events', { id, after: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).parse(url.searchParams.get('after') ?? 0) }) }
   }
   if (request.method === 'PATCH' && !action) {

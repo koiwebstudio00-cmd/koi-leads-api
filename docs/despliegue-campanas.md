@@ -9,7 +9,7 @@ API y worker se despliegan desde **koiwebstudio00-cmd/koi-leads-api**, como dos 
 - Snapshot inmutable de teléfono/texto por destinatario y arranque idempotente.
 - Cola PostgreSQL, un envío en vuelo por instancia, horarios de Argentina y límites persistentes por minuto/hora/día.
 - Worker independiente, pausa/reanudación/cancelación y recuperación de reservas al reiniciar.
-- Si un envío pudo haber salido pero no hay respuesta concluyente, se pausa y queda **por revisar**. Nunca se repite automáticamente ese POST.
+- Si un envío falla o queda incierto, se registra para revisión y la cola sigue con otros destinatarios. El envío incierto nunca se repite automáticamente. Los problemas del emisor pueden pausar la campaña.
 - Recepción autenticada de estados, deduplicación, entrega/lectura sin retroceder y bajas explícitas antes de responder al webhook.
 - Panel con actualización cada 3 segundos, destinatarios, actividad inicial y exportación CSV.
 
@@ -38,7 +38,12 @@ El 10/11/2026 se aplicaron, en este orden:
 2. `20261110024132_koi_two_campaigns.sql`
 3. `20261110034259_koi_whatsapp_conversations.sql`
 
-En un entorno que todavía deba aplicarlas, detener el worker y comprobar que no haya envíos en curso ni bloqueos por resultados inciertos. Aplicar solo migraciones pendientes, desplegar API y worker desde el mismo commit y después desplegar el frontend compatible. Comprobar el latido del worker y configurar o verificar el webhook. Las credenciales del worker y del webhook usan roles separados con permisos limitados y se conservan durante la actualización.
+Para esta entrega, aplicar las migraciones pendientes en orden:
+
+1. `20261111133426_koi_campaign_review_and_reply_link.sql`
+2. `20261111140358_koi_chat_rich_inbound.sql`
+
+Antes de migrar, detener el worker y comprobar que no haya envíos en curso. La primera migración libera el bloqueo anterior por incertidumbre. Si la campaña estaba pausada y todavía tiene trabajo en cola, se reanuda desde su detalle. Aplicar solo migraciones pendientes, desplegar API y worker desde el mismo commit y después desplegar el frontend compatible. Comprobar el latido del worker y configurar o verificar el webhook. Las credenciales del worker y del webhook usan roles separados con permisos limitados y se conservan durante la actualización.
 
 ## 2. Generar las credenciales una vez
 
@@ -137,7 +142,7 @@ El procedimiento parte de un worker con envíos deshabilitados en una instalaci�
 4. En `koi-worker`, cambiar a `KOI_SEND_ENABLED=true`, Save y Deploy.
 5. Verificar una única recepción en el teléfono, `Aceptado por Evolution` en Koi y luego entrega/lectura mediante webhook. La lectura depende de la configuración de WhatsApp del receptor.
 6. Probar pausa y reanudación con dos números propios. Cerrar la pestaña y volver a abrir: el avance debe persistir.
-7. Si se interrumpe el envío, revisar el chat antes de usar **Revisar resultado → cierre sin reenvío**. Solo admin puede resolverlo.
+7. Con una campaña controlada, comprobar que un fallo de destinatario deja avanzar al siguiente y aparece en **Revisar casos**. Revisar el chat antes de usar **Revisar resultado → cierre sin reenvío**. Solo un administrador puede resolverlo.
 
 Topes iniciales del servidor: mínimo 30 s entre mensajes, máximo 2/min, 60/h y 100/día local. Se usa el límite más restrictivo entre servidor y campaña. Son controles de carga y operación; no garantizan evitar bloqueos de WhatsApp.
 
@@ -148,7 +153,7 @@ Topes iniciales del servidor: mínimo 30 s entre mensajes, máximo 2/min, 60/h y
 - Los resultados ambiguos se conservan para revisión. Los POST ambiguos y los destinatarios fallidos requieren intervención manual.
 - El consentimiento registrado es informativo. Las bajas explícitas excluyen al contacto y se vuelven a comprobar antes del despacho.
 - Bajas reconocidas: `baja`, `stop`, `no me contacten`, `no me escriban más` / `mas`, en mensajes entrantes con teléfono inequívoco (`@s.whatsapp.net`). Un JID `@lid` requiere un identificador alternativo que confirme el teléfono para asociarlo a un lead.
-- Historial en pantalla: primeros 100 eventos; API con cursor `after` para consultar el resto. Exportación de estado de hasta 5.000 destinatarios.
+- El detalle muestra los 6 eventos más recientes. **Ver todos** expande el historial, que se consulta por bloques de hasta 100 mediante `after`. Exportación de estado de hasta 5.000 destinatarios.
 - Los recibos sin asociación quedan pendientes para tolerar que lleguen antes de la respuesta HTTP. Falta una política automática de retención de esos eventos y del historial; monitorear crecimiento.
 - Vista previa aproximada de texto/formato de WhatsApp, no plantilla oficial de Meta ni reproducción idéntica en todos los dispositivos.
 - Secuencias, agenda y disponibilidad continúan fuera de este MVP.

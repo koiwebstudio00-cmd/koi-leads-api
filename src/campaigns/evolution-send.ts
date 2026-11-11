@@ -12,7 +12,15 @@ export function createTextSender(config: { url: string; apiKey: string; instance
         body: JSON.stringify({ number, text, linkPreview: false }), redirect: 'error', signal: AbortSignal.timeout(15000),
       })
       if (!response.ok) {
-        await response.body?.cancel()
+        if (response.status === 400 && await rejectedRecipient(response, number)) {
+          return { outcome: 'failed', reason: 'not_on_whatsapp' }
+        }
+        if (response.status !== 400) await response.body?.cancel()
+        if (response.status === 429) {
+          const retry = response.headers.get('retry-after')
+          const seconds = retry && /^\d+$/.test(retry) ? Number(retry) : (Date.parse(retry ?? '') - Date.now()) / 1000
+          return { outcome: 'unknown', reason: 'provider_429', retryAfterSeconds: Number.isFinite(seconds) ? Math.max(1, Math.min(86400, Math.ceil(seconds))) : 60 }
+        }
         // Sólo rechazos previos inequívocos. Un 5xx/429 puede ocultar aceptación previa.
         if ([401,403,404].includes(response.status)) return { outcome: 'failed', reason: `provider_${response.status}` }
         return { outcome: 'unknown', reason: `provider_${response.status}` }
@@ -21,4 +29,25 @@ export function createTextSender(config: { url: string; apiKey: string; instance
       return body.success ? { outcome: 'accepted', providerId: body.data.key.id } : { outcome: 'unknown', reason: 'invalid_response' }
     } catch { return { outcome: 'unknown', reason: 'network_or_timeout' } }
   }
+}
+
+// Require the provider to name this recipient and explicitly deny registration.
+async function rejectedRecipient(response: Response, number: string) {
+  const reader = response.body?.getReader()
+  if (!reader) return false
+  const chunks: Uint8Array[] = []
+  let length = 0
+  try {
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      length += value.byteLength
+      if (length > 8192) { await reader.cancel(); return false }
+      chunks.push(value)
+    }
+    const parsed = z.object({ response: z.object({ message: z.array(z.object({
+      exists: z.literal(false), number: z.string(),
+    })) }) }).safeParse(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+    return parsed.success && parsed.data.response.message.some(item => item.number.replace(/^\+/, '') === number)
+  } catch { return false }
 }

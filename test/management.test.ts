@@ -119,3 +119,52 @@ test('dashboard counts contacted leads once across campaigns and keeps campaign 
  await machine('tick',{enabled:true})
  assert.equal((await crm('summary')).campaigns.completed,2)
 })
+
+test('campaign finishes with failed and uncertain recipients without retrying either', async () => {
+ const draft=await createCampaign(ids.slice(0,3))
+ await start(draft)
+ for (const [outcome,reason] of [['failed','not_on_whatsapp'],['unknown','network_or_timeout']] as const) {
+  const job=await machine('claim')
+  const reservation={id:job.id,token:job.lease_token}
+  await machine('begin',reservation)
+  await machine('finish',{...reservation,outcome,reason})
+  await db.query("update koi_private.senders set next_send_at=now() where workspace_id=$1",[w])
+  await db.query("update koi_private.message_attempts set started_at=now()-interval '2 minutes' where workspace_id=$1",[w])
+ }
+ await finish(await machine('claim'))
+ await machine('tick',{enabled:true,workerId:'test'})
+ const detail=await campaign('detail',{id:draft.id})
+ assert.equal(detail.campaign.status,'completed')
+ assert.equal(detail.sender.blocked,false)
+ assert.equal(detail.reviewPending,2)
+ const review=await campaign('recipients',{id:draft.id,status:'review'})
+ assert.equal(review.total,2)
+ assert.ok(review.recipients.every((recipient:{attempt:number})=>recipient.attempt===1))
+ for (const recipient of review.recipients) await campaign('resolve',{id:draft.id,recipientId:recipient.id,decision:'do_not_resend'})
+ assert.equal((await campaign('detail',{id:draft.id})).reviewPending,0)
+ assert.equal(await machine('claim'),null)
+})
+
+test('a sender authorization failure still pauses its campaign', async () => {
+ const draft=await createCampaign()
+ await start(draft)
+ const job=await machine('claim')
+ const reservation={id:job.id,token:job.lease_token}
+ await machine('begin',reservation)
+ await machine('finish',{...reservation,outcome:'failed',reason:'provider_403'})
+ const detail=await campaign('detail',{id:draft.id})
+ assert.equal(detail.campaign.status,'paused')
+ assert.equal(detail.campaign.pause_reason,'provider_unavailable')
+ assert.equal(detail.counts.queued,1)
+})
+
+test('an Argentine number variant links a live reply and advances the matched lead', async () => {
+ const lead=await db.query<{phone:string}>('select phone from koi_leads where id=$1',[ids[0]])
+ const phone=lead.rows[0]!.phone.replace(/^549/,'54')
+ await db.query("select koi_private.chat_ingest($1::uuid,$1::uuid::text,$2::jsonb)",[w,JSON.stringify({
+  kind:'message',peer:phone+'@s.whatsapp.net',phone,providerId:randomUUID(),text:'Me interesa',
+ })])
+ assert.equal((await crm('detail',{id:ids[0]})).lead.stage,'replied')
+ const linked=await db.query<{lead_id:string}>('select lead_id from koi_conversations where workspace_id=$1 and phone=$2',[w,phone])
+ assert.equal(linked.rows[0]!.lead_id,ids[0])
+})

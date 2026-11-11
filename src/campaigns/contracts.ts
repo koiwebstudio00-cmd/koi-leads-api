@@ -16,4 +16,4 @@ export const campaignInput = z.object({
 export type CampaignInput = z.infer<typeof campaignInput>
 export type CampaignCommand = (action: string, data: Record<string, unknown>) => Promise<unknown>
 export type QueueJob = { id: string; campaign_id: string; phone: string; message: string; lease_token: string }
-export type SendOutcome = { outcome: 'accepted'; providerId: string } | { outcome: 'failed' | 'unknown'; reason: string }
+export type SendOutcome = { outcome: 'accepted'; providerId: string } | { outcome: 'failed'; reason: string } | { outcome: 'unknown'; reason: string; retryAfterSeconds?: number }

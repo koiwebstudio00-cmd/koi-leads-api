@@ -6,7 +6,8 @@ import type { SendOutcome } from './campaigns/contracts.ts'
 
 export type ChatCommand = (action: string, data: Record<string, unknown>) => Promise<unknown>
 export const maxAttachmentBytes = 4 * 1024 * 1024
-export const attachmentMime = z.enum(['image/jpeg', 'image/png', 'application/pdf', 'audio/ogg', 'audio/mpeg', 'audio/mp4'])
+const outgoingAttachmentMime = z.enum(['image/jpeg', 'image/png', 'application/pdf', 'audio/ogg', 'audio/mpeg', 'audio/mp4'])
+export const attachmentMime = z.enum([...outgoingAttachmentMime.options, 'image/webp'])
 const account = z.union([z.literal('primary'), z.uuid()])
 const cursor = z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER)
 const attachmentInput = z.object({
@@ -44,6 +45,10 @@ export function validAttachment(base64: string, mime: string) {
   switch (mime) {
     case 'image/jpeg': return bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))
     case 'image/png': return bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+    case 'image/webp': return bytes.length >= 20 && bytes.subarray(0, 4).toString() === 'RIFF'
+      && bytes.readUInt32LE(4) === bytes.length - 8 && bytes.subarray(8, 12).toString() === 'WEBP'
+      && ['VP8 ', 'VP8L', 'VP8X'].includes(bytes.subarray(12, 16).toString())
+      && bytes.readUInt32LE(16) <= bytes.length - 20
     case 'application/pdf': return bytes.subarray(0, 5).toString() === '%PDF-'
     case 'audio/ogg': return bytes.subarray(0, 4).toString() === 'OggS'
     case 'audio/mp4': return bytes.subarray(4, 8).toString() === 'ftyp'
@@ -150,7 +155,7 @@ export async function chatRoute(request: IncomingMessage, url: URL, command: Cha
     const key = z.uuid().parse(request.headers['idempotency-key'])
     if (!text && !file) throw new ApiError(422, 'Escribí un mensaje o elegí un archivo.')
     if (file?.mime.startsWith('audio/') && text) throw new ApiError(422, 'Enviá el texto y el audio en mensajes separados.')
-    if (file && !validAttachment(file.base64, file.mime)) throw new ApiError(422, 'El archivo no coincide con el formato indicado o supera 4 MiB.')
+    if (file && (!outgoingAttachmentMime.safeParse(file.mime).success || !validAttachment(file.base64, file.mime))) throw new ApiError(422, 'El archivo no coincide con el formato indicado o supera 4 MiB.')
     const data = await command('send', { id, key, text, ...(file ? { mime: file.mime, fileName: file.name, base64: file.base64 } : {}) })
     return { status: 202, data }
   }

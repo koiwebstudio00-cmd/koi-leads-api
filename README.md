@@ -197,3 +197,19 @@ Aplicar primero las migraciones pendientes en orden y desplegar API, worker y fr
 ## Despacho manual independiente — 12/11/2026
 
 Los chats manuales quedan fuera de los intervalos, cupos y horarios de campaña. Usan un worker propio con prioridad por número, sin consumir presupuesto de campañas. Requiere una migración nueva y sustituir el worker mixto por dos servicios compatibles. [Configuración, permisos, despliegue y reversión](docs/envio-manual-inmediato.md). Implementado localmente; pendiente de despliegue productivo.
+
+## Chats de WhatsApp por número y estadísticas — 12/11/2026
+
+Migraciones nuevas, en este orden y una sola vez cada una:
+- `20261112120000_koi_chat_inbox_actions.sql`: borrado lógico de chats (`deleted_at`), chats sin mensajes fuera de la bandeja, marcar como no leído y apertura sin crear registros.
+- `20261112140000_koi_stats_and_stage_history.sql`: historial de cambios de etapa (`koi_lead_stage_events`) y la función `koi_stats_command`. El historial empieza desde esta migración; no se reconstruye el pasado.
+
+Cambios de comportamiento:
+- `POST /api/conversations` (abrir) ya no crea conversaciones. Solo devuelve un chat existente con mensajes.
+- El primer mensaje a un lead sin chat se envía con `POST /api/conversations/drafts/messages` (202). Crea la conversación junto con el mensaje. Exige `Idempotency-Key`, `leadId`, `instanceId` y `text` o archivo.
+- `GET /api/conversations/by-lead/:leadId` lista los chats con mensajes de un lead.
+- `POST /api/conversations/:id/unread` marca el último mensaje entrante como no leído.
+- `POST /api/conversations/:id/delete` oculta el chat (borrado lógico). Si el contacto vuelve a escribir, el chat reaparece con su historial.
+- `GET /api/crm/stats?from=…&to=…` (ISO 8601 con offset, máximo 400 días) devuelve `kpis`, `campaignRecipients`, `funnel` (foto actual de etapas) y `daily` por día en hora de Tucumán. Los indicadores de periodo son: contactados (envío saliente aceptado o destinatario de campaña aceptado), interesados, ganados, perdidos y errores (chats y destinatarios fallidos). La fecha usada para contactados es la de creación del mensaje o la de última actualización del destinatario.
+
+Validación local: `npm run typecheck` sin errores y 84 pruebas aprobadas, incluidas las de `test/chat-inbox.test.ts` y `test/stats.test.ts` sobre PGlite. `test/postgres.integration.ts` requiere Postgres real y no se corrió en esta entrega.

@@ -1,6 +1,6 @@
 # Envío manual inmediato
 
-Implementación local del 12/11/2026. Requiere publicar API, workers y frontend compatibles y aplicar la migración `20261112013328_koi_manual_dispatch.sql`. Migración aplicada en Supabase el 12/11/2026; despliegue de servicios en curso.
+Backend desplegado el 12/11/2026. Migración `20261112013328_koi_manual_dispatch.sql` aplicada en Supabase; API y workers publicados desde `main`. Los cambios visuales del frontend siguen pendientes de publicación.
 
 ## Funcionamiento
 
@@ -65,4 +65,12 @@ Desde el frontend: `KOI_API_REPOSITORY=/ruta/koi-leads-api npm run test:e2e`. Us
 
 Verificación del 12/11/2026: API `npm run verify` con 78 pruebas aprobadas; PostgreSQL real con 19 pruebas aprobadas; frontend `npm run verify` con 78 pruebas, tipos y build correctos; 21 recorridos Chromium integrados aprobados. Lint conserva tres avisos Fast Refresh preexistentes en componentes de UI. Todas las pruebas usaron datos sintéticos, sin envíos reales. La base PostgreSQL descartable se detuvo al finalizar.
 
-La imagen Docker no se construyó en esta sesión porque el daemon no estaba disponible. Quedan pendientes el ensayo del despliegue/reversión, asesores de Supabase del entorno de destino, aplicación de la migración y validación con Evolution en producción. No se midió aún el p95 operativo; se agregó `queueWaitMs` para medirlo después del despliegue.
+## Verificación de producción — 12/11/2026
+
+- Migración aplicada en `avqhjbrcbgqhelfkcist` después de detener el worker mixto y confirmar cero envíos en curso. Se conservó una copia privada del esquema previo.
+- Código integrado y publicado en `main`; commit funcional `8dcc133`, historial de migración alineado en `8a9a8a8`. La API se actualizó mediante autodespliegue y respondió correctamente en `/health`.
+- `koi-worker` ejecuta exclusivamente campañas; `koi-chat-worker` ejecuta conversaciones con credencial propia. Ambos contenedores se verificaron saludables y con latidos independientes recientes en Supabase.
+- El chat arrancó inicialmente con envíos deshabilitados. Tras verificar su latido se habilitó `KOI_CHAT_SEND_ENABLED=true`; las campañas conservaron `KOI_SEND_ENABLED=true`.
+- El rol de chat tiene login limitado, sin superusuario, sin bypass de RLS y sin lectura directa de mensajes privados; se verificó su acceso al dispatcher.
+- Asesores de seguridad sin hallazgos nuevos respecto de la consulta previa: permanecen nueve avisos informativos sobre tablas sin políticas y el aviso previo de protección de contraseñas filtradas deshabilitada.
+- No se enviaron mensajes de prueba ni se crearon campañas. Quedan pendientes la validación con números propios autorizados, la medición del p95 y un ensayo operativo de reversión. Los cambios visuales del frontend siguen locales.

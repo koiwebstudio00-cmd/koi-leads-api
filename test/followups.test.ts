@@ -17,7 +17,7 @@ before(async()=>{
  await db.query("insert into koi_workspace_members(workspace_id,user_id,role) values($1,$2,'admin'),($1,$3,'operator'),($4,$5,'admin')",[w,user,mate,other,outsider])
  await db.query("insert into koi_leads(id,workspace_id,phone,name,created_by) values($1,$2,'5493811111111','Lead',$3),($4,$5,'5493812222222','Foreign',$6)",[lead,w,user,foreignLead,other,outsider])
  await db.query("insert into koi_private.senders(workspace_id,instance) values($1,'test')",[w])
- chat=(await api<{id:string}>('chat','open',{leadId:lead,instanceId:'primary'})).id
+ chat=(await db.query<{id:string}>("insert into koi_conversations(workspace_id,instance,peer,phone,lead_id) values($1,'test','5493811111111@s.whatsapp.net','5493811111111',$2) returning id",[w,lead])).rows[0]!.id
  chat2=(await db.query<{id:string}>("insert into koi_conversations(workspace_id,instance,peer,phone,lead_id) values($1,'second','5493811111111@s.whatsapp.net','5493811111111',$2) returning id",[w,lead])).rows[0]!.id
 })
 after(()=>db.close())
@@ -51,7 +51,8 @@ test('pending replies are independent of read state and owner filters are scoped
  await message('out',false,'En cola','queued');assert.equal((await api<unknown[]>('chat','list',{pendingReply:true})).length,1)
  await message('out');assert.equal((await api<unknown[]>('chat','list',{pendingReply:true})).length,0)
  await api('chat','update',{id:chat,assignedTo:user})
- assert.equal((await api<unknown[]>('chat','list',{owner:'mine'})).length,2)
+ // chat2 no tiene mensajes: no aparece en la bandeja (solo el chat con mensajes).
+ assert.equal((await api<unknown[]>('chat','list',{owner:'mine'})).length,1)
  assert.equal((await api<unknown[]>('chat','list',{owner:'mine'},mate)).length,0)
  assert.equal((await api<unknown[]>('chat','list',{},outsider)).length,0)
 })

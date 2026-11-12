@@ -147,7 +147,7 @@ test('concurrent starts reserve exactly two slots and both campaigns make progre
 
 test('chat receives once, retains early receipts, and isolates messages and attachments by workspace',async()=>{
  const chat=(action:string,data:Record<string,unknown>,actor=user)=>api(action,data,actor,'chat')
- const thread=await chat('open',{leadId:first,instanceId:'primary'})
+ const thread=await openThread(first,'primary')
  const incoming={kind:'message',peer:'5493811111111@s.whatsapp.net',phone:'5493811111111',providerId:'chat-incoming',text:'Consulta de prueba'}
  await machine('chat_ingest',incoming,hook);await machine('chat_ingest',incoming,hook)
  const firstRead=await chat('detail',{id:thread.id})
@@ -176,7 +176,7 @@ test('manual sending is idempotent, shares transport and does not consume campai
  const {c}=await campaign();await start(c)
  await db.query('update koi_private.senders set max_day=1 where workspace_id=$1',[workspace])
  const chat=(action:string,data:Record<string,unknown>)=>api(action,data,user,'chat')
- const thread=await chat('open',{leadId:second,instanceId:'primary'})
+ const thread=await openThread(second,'primary')
  const key=randomUUID(),base64=Buffer.from('%PDF-1.7 fixture').toString('base64')
  const input={id:thread.id,key,text:'Archivo de prueba',mime:'application/pdf',fileName:'prueba.pdf',base64}
  const queued=await chat('send',input)
@@ -200,8 +200,13 @@ async function resetDispatch() {
  await db.query('delete from koi_suppressions')
  await db.query('update koi_private.senders set chat_enabled=true,chat_heartbeat_at=now(),max_day=10000,max_hour=3600,max_minute=60')
 }
+// Equivale al alta de un chat existente: la conversación se crea sin mensajes (open ya no inserta).
+async function openThread(leadId:string, instance:string) {
+ const lead=(await db.query<{phone:string}>('select phone from koi_leads where id=$1',[leadId])).rows[0]!
+ return (await db.query<{id:string}>("insert into koi_conversations(workspace_id,instance,peer,phone,lead_id) values($1,$2,$3,$4,$5) on conflict(workspace_id,instance,peer) do update set lead_id=excluded.lead_id,deleted_at=null returning id",[workspace,instance,lead.phone+'@s.whatsapp.net',lead.phone,leadId])).rows[0]!
+}
 async function queueChat(leadId=first, text='Respuesta manual') {
- const thread=await api('open',{leadId,instanceId:'primary'},user,'chat')
+ const thread=await openThread(leadId,'primary')
  const message=await api('send',{id:thread.id,key:randomUUID(),text},user,'chat')
  return {thread,message}
 }
@@ -303,7 +308,7 @@ test('queue NOTIFY is committed, carries no message data, and chat role cannot r
 test('independent numbers progress while one is paused; same-conversation order is preserved',async()=>{
  await resetDispatch();await campaign()
  const instance=(await db.query("insert into koi_whatsapp_instances(workspace_id,label,request_id) values($1,'Segunda',gen_random_uuid()) returning id,instance_name",[workspace])).rows[0]
- const other=await api('open',{leadId:second,instanceId:instance.id},user,'chat')
+ const other=await openThread(second,instance.instance_name)
  const a=await api('send',{id:other.id,key:randomUUID(),text:'Primero'},user,'chat')
  const b=await api('send',{id:other.id,key:randomUUID(),text:'Segundo'},user,'chat')
  await queueChat(first)

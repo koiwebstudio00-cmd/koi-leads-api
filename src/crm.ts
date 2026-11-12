@@ -16,6 +16,7 @@ const filters = z.object({
   assignedTo:z.union([z.uuid(),z.literal(''),z.literal('unassigned')]).default(''),
   page:z.coerce.number().int().min(1).max(100000).default(1),
 }).strict()
+const statsFilter = z.object({ from: z.iso.datetime({offset:true}), to: z.iso.datetime({offset:true}) }).strict().refine(value => Date.parse(value.to) > Date.parse(value.from), 'El periodo no es válido.')
 export const crmUpdate = z.object({
   product:product.optional(), revision:z.number().int().nonnegative(), stage:stageSchema.optional(),
   tags:z.array(z.string().trim().min(1).max(40)).max(20).optional(),
@@ -41,6 +42,7 @@ export function createCrmStore(client:SupabaseClient):CrmCommand {
       crmError(result.error)
       return result.data
     }
+    if(action==='stats'){const result=await client.rpc('koi_stats_command',{p_data:data});crmError(result.error);return result.data}
     const result=await client.rpc('koi_crm_command',{p_action:action,p_data:data});if(result.error && (action==='messages'||action.startsWith('message_'))){
     const code=result.error.code
     if(code==='PT409'||code==='23505')throw new ApiError(409,'El mensaje cambió desde que lo abriste. Cerrá el editor, actualizá la lista y volvé a intentar.')
@@ -73,6 +75,7 @@ export async function crmRoute(request:IncomingMessage,url:URL,command:CrmComman
   if(path==='/tasks'&&request.method==='POST')return {status:201,data:await command('task_create',{...z.object({leadId:z.uuid(),title:z.string().trim().min(1).max(500),dueAt:z.iso.datetime({offset:true}).nullable()}).strict().parse(await readBody()),key:z.uuid().parse(request.headers['idempotency-key'])})}
   const task=/^\/tasks\/([^/]+)$/.exec(path)
   if(task&&request.method==='PATCH')return {status:200,data:await command('task_update',{id:z.uuid().parse(task[1]),...z.object({revision:z.number().int().nonnegative(),title:z.string().trim().min(1).max(500).optional(),dueAt:z.iso.datetime({offset:true}).nullable().optional(),status:z.enum(['pending','completed']).optional()}).strict().refine(v=>Object.keys(v).length>1).parse(await readBody())})}
+  if(request.method==='GET'&&path==='/stats')return {status:200,data:await command('stats',statsFilter.parse(Object.fromEntries(url.searchParams)))}
   if(request.method==='GET'&&['/leads','/board','/options','/summary'].includes(path))return {status:200,data:await command(path==='/leads'?'list':path.slice(1),filters.parse(Object.fromEntries(url.searchParams)))}
   if(request.method==='POST'&&path==='/leads')return {status:201,data:await command('create',{...createLead.parse(await readBody()),key:z.uuid().parse(request.headers['idempotency-key'])})}
   if(request.method==='POST'&&path==='/bulk')return {status:200,data:await command('bulk',{...bulk.parse(await readBody()),key:z.uuid().parse(request.headers['idempotency-key'])})}

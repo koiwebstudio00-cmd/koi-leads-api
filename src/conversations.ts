@@ -98,11 +98,22 @@ export async function chatRoute(request: IncomingMessage, url: URL, command: Cha
     }).strict().parse(Object.fromEntries(url.searchParams))
     return { status: 200, data: await command('list', input) }
   }
+  if (path.startsWith('/by-lead/') && request.method === 'GET') {
+    return { status: 200, data: await command('by_lead', { leadId: z.uuid().parse(path.slice('/by-lead/'.length)) }) }
+  }
+  if (path === '/drafts/messages' && request.method === 'POST') {
+    // Primer mensaje a un lead sin chat: la conversación se crea junto con el envío.
+    const draft = z.object({ leadId: z.uuid(), instanceId: account }).extend({ text: z.string(), file: z.unknown().optional() }).strict().parse(await readBody(6 * 1024 * 1024))
+    const { text, file } = outgoingBody({ text: draft.text, file: draft.file })
+    const key = z.uuid().parse(request.headers['idempotency-key'])
+    const data = await command('send_new', { leadId: draft.leadId, instanceId: draft.instanceId, key, text, ...(file ? { mime: file.mime, fileName: file.name, base64: file.base64 } : {}) })
+    return { status: 202, data }
+  }
   if (path === '' && request.method === 'POST') {
     const input = z.object({ leadId: z.uuid(), instanceId: account }).strict().parse(await readBody())
     return { status: 200, data: await command('open', input) }
   }
-  const match = /^\/([^/]+)(?:\/(read|messages|attachment|resolve|history))?$/.exec(path)
+  const match = /^\/([^/]+)(?:\/(read|messages|attachment|resolve|history|unread|delete))?$/.exec(path)
   if (!match) throw new ApiError(404, 'No encontramos esa operación.')
   const id = z.uuid().parse(match[1])
   if (request.method === 'GET' && !match[2]) {
@@ -150,16 +161,24 @@ export async function chatRoute(request: IncomingMessage, url: URL, command: Cha
     const { messageId } = z.object({ messageId: z.uuid() }).strict().parse(await readBody())
     return { status: 200, data: await command('resolve', { id, messageId }) }
   }
+  if (request.method === 'POST' && match[2] === 'unread') return { status: 200, data: await command('unread', { id }) }
+  if (request.method === 'POST' && match[2] === 'delete') return { status: 200, data: await command('delete', { id }) }
   if (request.method === 'POST' && match[2] === 'messages') {
-    const { text, file } = z.object({ text: z.string().trim().max(4000), file: attachmentInput.optional() }).strict().parse(await readBody(6 * 1024 * 1024))
+    const { text, file } = outgoingBody(await readBody(6 * 1024 * 1024))
     const key = z.uuid().parse(request.headers['idempotency-key'])
-    if (!text && !file) throw new ApiError(422, 'Escribí un mensaje o elegí un archivo.')
-    if (file?.mime.startsWith('audio/') && text) throw new ApiError(422, 'Enviá el texto y el audio en mensajes separados.')
-    if (file && (!outgoingAttachmentMime.safeParse(file.mime).success || !validAttachment(file.base64, file.mime))) throw new ApiError(422, 'El archivo no coincide con el formato indicado o supera 4 MiB.')
     const data = await command('send', { id, key, text, ...(file ? { mime: file.mime, fileName: file.name, base64: file.base64 } : {}) })
     return { status: 202, data }
   }
   throw new ApiError(404, 'No encontramos esa operación.')
+}
+
+// Valida un mensaje saliente (texto y/o adjunto). Lo comparten el envío a un chat existente y el envío desde un borrador.
+function outgoingBody(raw: unknown) {
+  const { text, file } = z.object({ text: z.string().trim().max(4000), file: attachmentInput.optional() }).strict().parse(raw)
+  if (!text && !file) throw new ApiError(422, 'Escribí un mensaje o elegí un archivo.')
+  if (file?.mime.startsWith('audio/') && text) throw new ApiError(422, 'Enviá el texto y el audio en mensajes separados.')
+  if (file && (!outgoingAttachmentMime.safeParse(file.mime).success || !validAttachment(file.base64, file.mime))) throw new ApiError(422, 'El archivo no coincide con el formato indicado o supera 4 MiB.')
+  return { text, file }
 }
 
 export type ChatSendJob = { queueWaitMs?: number; phone: string; text: string; mime: string | null; fileName: string | null; base64: string | null }

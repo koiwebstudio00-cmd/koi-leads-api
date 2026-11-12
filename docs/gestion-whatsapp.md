@@ -50,3 +50,7 @@ Se verificó el grabador y la cola con un micrófono simulado. En el entorno loc
 Con Evolution 2.3.7 y Baileys, Koi procesa estos formatos a partir de los eventos de mensajes ya configurados. Verificar `MESSAGES_UPSERT` en cada instancia y `SEND_MESSAGE` para registrar mensajes salientes. Las reacciones se asocian al mensaje original dentro del mismo espacio, instancia y chat. Los cambios y retiros se aplican según la marca de tiempo del proveedor. La descarga autenticada de stickers valida el formato WebP y el límite de 4 MiB. Las citas usan la referencia original y muestran el fragmento del proveedor cuando el original no está guardado.
 
 Después del despliegue, desde un contacto de prueba, agregar, cambiar y retirar una reacción, enviar un sticker estático y uno animado, y responder citando un mensaje saliente. Verificar que la reacción se mantenga en la burbuja original, que ambos stickers carguen y que la cita lleve al mensaje si está disponible. Las ediciones de mensajes siguen pendientes de validar con Evolution.
+
+## Despacho manual independiente — 12/11/2026
+
+Los chats manuales quedan fuera de los intervalos, cupos y horarios de campaña. Usan un worker propio con prioridad por número, sin consumir presupuesto de campañas. Requiere una migración nueva y sustituir el worker mixto por dos servicios compatibles. [Configuración, permisos, despliegue y reversión](envio-manual-inmediato.md). Implementado localmente; pendiente de despliegue productivo.

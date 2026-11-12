@@ -162,7 +162,7 @@ export async function chatRoute(request: IncomingMessage, url: URL, command: Cha
   throw new ApiError(404, 'No encontramos esa operación.')
 }
 
-export type ChatSendJob = { phone: string; text: string; mime: string | null; fileName: string | null; base64: string | null }
+export type ChatSendJob = { queueWaitMs?: number; phone: string; text: string; mime: string | null; fileName: string | null; base64: string | null }
 const providerId = z.object({ key: z.object({ id: z.string().min(1).max(200) }) })
 export function createChatMedia(config: { url: string; apiKey: string }, request: typeof fetch = fetch) {
   const post = (path: string, body: object) => request(`${config.url}${path}`, {
@@ -203,7 +203,14 @@ export function createChatMedia(config: { url: string; apiKey: string }, request
         const response = await post(`/message/${route}/${encodeURIComponent(instance)}`, body)
         if (!response.ok) {
           await response.body?.cancel()
-          return { outcome: [401,403,404].includes(response.status) ? 'failed' : 'unknown', reason: `provider_${response.status}` }
+          if (response.status === 429) {
+            const retry = response.headers.get('retry-after')
+            const seconds = retry && /^\d+$/.test(retry) ? Number(retry) : (Date.parse(retry ?? '') - Date.now()) / 1000
+            return { outcome: 'unknown', reason: 'provider_429', retryAfterSeconds: Number.isFinite(seconds) ? Math.max(1, Math.min(86400, Math.ceil(seconds))) : 60 }
+          }
+          return [401,403,404].includes(response.status)
+            ? { outcome: 'failed', reason: `provider_${response.status}` }
+            : { outcome: 'unknown', reason: `provider_${response.status}` }
         }
         const result = providerId.safeParse(await response.json())
         return result.success ? { outcome: 'accepted', providerId: result.data.key.id } : { outcome: 'unknown', reason: 'invalid_response' }

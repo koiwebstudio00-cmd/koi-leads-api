@@ -143,7 +143,7 @@ Migraciones aplicadas en producción el 10/11/2026:
 - `20261110024130_koi_lead_management.sql`: producto (`cubiko`, `zyro`, `toki`, `estudio` o sin asignar), resumen de inicio, altas idempotentes, edición/eliminación masiva con revisión y actualización explícita de campos al importar.
 - `20261110024132_koi_two_campaigns.sql`: dos cupos activos por workspace y reparto de trabajo entre campañas elegibles. Programadas, en ejecución y pausadas ocupan cupo. Terminar o cancelar libera el cupo. Cada campaña admite hasta 100 destinatarios; no limita la cantidad total de borradores, campañas históricas ni leads registrados.
 
-Los envíos conservan el número principal y sus límites existentes: 100 intentos diarios compartidos, 2 por minuto, 60 por hora y al menos 30 segundos de separación. Los límites más estrictos de cada configuración siguen aplicándose. Las bajas explícitas se vuelven a comprobar antes de cada envío. Dos campañas activas no implican dos mensajes simultáneos desde el mismo número.
+Los envíos conservan el número principal y sus límites existentes: 100 intentos diarios compartidos entre campañas, 2 por minuto, 60 por hora y al menos 30 segundos de separación. Los límites más estrictos de cada configuración siguen aplicándose. Las bajas explícitas se vuelven a comprobar antes de cada envío. Dos campañas activas no implican dos mensajes simultáneos desde el mismo número.
 
 `POST /api/crm/leads` crea un lead; `POST /api/crm/bulk` actualiza o elimina una selección explícita (hasta 5.000 por operación). Ambos requieren `Idempotency-Key`; la selección exige `id` y `revision`. La eliminación conserva historial, quita membresías y omite envíos pendientes; rechaza contactos con envíos en curso o inciertos. Volver a crear un teléfono eliminado restaura la ficha. Las importaciones conservan datos existentes salvo campos y producto expresamente seleccionados, con vista previa y control de revisión.
 
@@ -193,3 +193,7 @@ GET /api/crm/campaign-recipients consulta una base del espacio con filtros de b�
 - `20261111140358_koi_chat_rich_inbound.sql` agrega reacciones por mensaje, referencias de citas y soporte de stickers entrantes. Las reacciones quedan fuera de los mensajes y de los pendientes de respuesta. El endpoint autenticado de adjuntos admite WebP de hasta 4 MiB para lectura.
 
 Aplicar primero las migraciones pendientes en orden y desplegar API, worker y frontend según la [guía de campañas](docs/despliegue-campanas.md#1-migraciones). El flujo de eventos entrantes está en la [guía de WhatsApp](docs/gestion-whatsapp.md#reacciones-stickers-y-respuestas-citadas). Pasaron 73 pruebas de API y el recorrido integrado de chat con webhooks sintéticos.
+
+## Despacho manual independiente — 12/11/2026
+
+Los chats manuales quedan fuera de los intervalos, cupos y horarios de campaña. Usan un worker propio con prioridad por número, sin consumir presupuesto de campañas. Requiere una migración nueva y sustituir el worker mixto por dos servicios compatibles. [Configuración, permisos, despliegue y reversión](docs/envio-manual-inmediato.md). Implementado localmente; pendiente de despliegue productivo.

@@ -174,3 +174,7 @@ No ejecutar dos suites PostgreSQL en paralelo: crean roles de prueba con nombres
 Desde el repo del front, `KOI_API_REPOSITORY=/Users/dev0/koi/koi-leads-api npm run test:e2e` usa la API local con Auth sintética. No envía mensajes reales.
 
 Referencias verificadas: [Evolution 2.3.7](https://github.com/EvolutionAPI/evolution-api/tree/2.3.7), [conexiones Supabase](https://supabase.com/docs/guides/database/connecting-to-postgres), [bloqueos PostgreSQL](https://www.postgresql.org/docs/17/sql-select.html).
+
+## Despacho manual independiente — 12/11/2026
+
+Los chats manuales quedan fuera de los intervalos, cupos y horarios de campaña. Usan un worker propio con prioridad por número, sin consumir presupuesto de campañas. Requiere una migración nueva y sustituir el worker mixto por dos servicios compatibles. [Configuración, permisos, despliegue y reversión](envio-manual-inmediato.md). Implementado localmente; pendiente de despliegue productivo.

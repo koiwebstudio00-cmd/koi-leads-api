@@ -13,7 +13,9 @@
     "test": "node --test test/*.test.ts",
     "verify": "npm run typecheck && npm test",
     "worker": "node --env-file-if-exists=.env src/worker.ts",
-    "test:postgres": "node --test test/postgres.integration.ts"
+    "test:postgres": "node --test test/postgres.integration.ts",
+    "worker:campaigns": "node --env-file-if-exists=.env src/worker.ts",
+    "worker:chat": "node --env-file-if-exists=.env src/chat-worker.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.111.0",

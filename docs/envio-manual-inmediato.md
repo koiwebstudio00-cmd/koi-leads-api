@@ -1,6 +1,6 @@
 # Envío manual inmediato
 
-Implementación local del 12/11/2026. Requiere publicar API, workers y frontend compatibles y aplicar la migración `20261112040353_koi_manual_dispatch.sql`. Esta documentación no certifica un despliegue productivo.
+Implementación local del 12/11/2026. Requiere publicar API, workers y frontend compatibles y aplicar la migración `20261112013328_koi_manual_dispatch.sql`. Migración aplicada en Supabase el 12/11/2026; despliegue de servicios en curso.
 
 ## Funcionamiento
 

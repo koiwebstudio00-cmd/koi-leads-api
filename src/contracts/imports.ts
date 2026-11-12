@@ -40,9 +40,26 @@ export function suggestMapping(headers: string[]): Mapping {
   return mapping
 }
 
+// Only explicit WhatsApp number links are parsed. Short links require resolution.
+export function whatsappLinkPhone(value: string): string | null {
+  try {
+    const url = new URL(value.trim())
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.port) return null
+    let phone: string | null = null
+    if (url.hostname === 'wa.me') phone = /^\/(?:c\/)?([1-9]\d{9,14})\/?$/.exec(url.pathname)?.[1] ?? null
+    if (['api.whatsapp.com', 'web.whatsapp.com'].includes(url.hostname) && url.pathname === '/send') phone = url.searchParams.get('phone')?.replace(/^\+/, '') ?? null
+    return phone && /^[1-9]\d{9,14}$/.test(phone) ? phone : null
+  } catch { return null }
+}
+
 export function normalizePhone(value: string, country: ImportChoices['country']): { phone: string; error: string; warning: string } {
   // Algunos exportadores agregan un apóstrofo para que Excel trate el número como texto.
-  const original = value.trim().replace(/^'(?=\+?\d)/, '')
+  let original = value.trim().replace(/^'(?=\+?\d)/, '')
+  if (/^https?:\/\//i.test(original)) {
+    const candidate = whatsappLinkPhone(original)
+    if (!candidate) return { phone: '', error: 'El enlace de WhatsApp no contiene un número completo.', warning: '' }
+    original = `+${candidate}`
+  }
   const invalid = (error: string) => ({ phone: '', error, warning: '' })
   if (!original) return invalid('Falta el teléfono.')
   if (/[^\d+().\s-]/.test(original) || !/^(?:\+|00)?[\d().\s-]+$/.test(original)) return invalid('Usá un teléfono en texto, sin letras, extensiones ni notación científica.')
@@ -80,6 +97,11 @@ export function prepareRows(draft: ParsedImport, choices: Pick<ImportChoices, 'm
     if (phone.phone) seen.add(phone.phone)
     // La posición hace únicas las claves aunque el archivo repita encabezados.
     const extra = Object.fromEntries(draft.headers.flatMap((header, index) => used.has(index) ? [] : [[`${index + 1}:${header}`, cells[index] ?? '']]))
+    const whatsappIndex = draft.headers.findIndex(header => header.trim().toLowerCase() === 'whatsapp')
+    const candidate = whatsappIndex < 0 ? null : whatsappLinkPhone(cells[whatsappIndex] ?? '')
+    if (candidate && (candidate === phone.phone || (/^549?\d{10}$/.test(candidate) && /^549?\d{10}$/.test(phone.phone) && candidate.slice(-10) === phone.phone.slice(-10)))) {
+      extra.whatsapp_candidate = candidate
+    }
     return { row: original.row, cells, phone: phone.phone, name: value('name'), company: value('company'), email: value('email'), source: value('source'), extra, consent, error, warning: phone.warning, duplicate, blank }
   })
 }

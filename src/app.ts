@@ -3,6 +3,7 @@ import type { InboxService } from './inbox/service.ts'
 import type { IncomingHttpHeaders } from 'node:http'
 import { chatRoute, type ReadChatMedia, type RelayChatMedia, type SyncChatHistory } from './conversations.ts'
 import { crmRoute } from './crm.ts'
+import type { StatisticsService } from './statistics/service.ts'
 import { leadInput } from './lead-input.ts'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { randomUUID } from 'node:crypto'
@@ -37,7 +38,7 @@ async function readBytes(request: IncomingMessage, maxBytes: number) {
   return Buffer.concat(chunks)
 }
 
-export function createApp(options: { authorize: Authorize; origin: string; inboxSendEnabled?:boolean; inboxRichEnabled?:boolean; inbox?: InboxService; inboxMedia?:InboxReadMedia; inboxWebhook?: (headers:IncomingHttpHeaders,raw:Buffer)=>Promise<unknown>; whatsapp?: WhatsAppManager; readChatMedia?: ReadChatMedia; relayChatMedia?: RelayChatMedia; syncChatHistory?: SyncChatHistory; evolution?: EvolutionConnection; webhook?: (header: string | string[] | undefined, body: () => Promise<unknown>) => Promise<unknown> }) {
+export function createApp(options: { authorize: Authorize; origin: string; statistics?:StatisticsService; inboxSendEnabled?:boolean; inboxRichEnabled?:boolean; inbox?: InboxService; inboxMedia?:InboxReadMedia; inboxWebhook?: (headers:IncomingHttpHeaders,raw:Buffer)=>Promise<unknown>; whatsapp?: WhatsAppManager; readChatMedia?: ReadChatMedia; relayChatMedia?: RelayChatMedia; syncChatHistory?: SyncChatHistory; evolution?: EvolutionConnection; webhook?: (header: string | string[] | undefined, body: () => Promise<unknown>) => Promise<unknown> }) {
   let uploads = 0
   let activeInboxPosts = 0
   const server = createServer(async (request, response) => {
@@ -113,6 +114,11 @@ export function createApp(options: { authorize: Authorize; origin: string; inbox
         const result = await chatRoute(request, url, store.chat, limit => readBody(request, limit), options.readChatMedia, options.syncChatHistory,
           relay ? lookup => relay(token, lookup) : undefined)
         send(result.status, result.data); return
+      }
+      if (path.startsWith('/api/crm/stats/')) {
+        if (!options.statistics) throw new ApiError(503,'La integración de estadísticas todavía no está configurada.')
+        send(200, await options.statistics(request,url,store))
+        return
       }
       if (path.startsWith('/api/crm/')) {
         if (!store.crm) throw new ApiError(503, 'CRM no disponible.')

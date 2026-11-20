@@ -64,12 +64,27 @@ export function createZernioClient(apiKey:string,fetcher:typeof fetch=fetch) {
     }
     try{return schema.parse(await response.json())}catch{throw new ZernioError('provider_contract_invalid')}
   }
+  const account = (accountId:string) =>
+    get('accounts/'+encodeURIComponent(accountId),z.object({account:accountSchema})).then(v=>v.account)
+  async function connect(platform:'whatsapp'|'instagram',profileId:string,redirect:string,reconnect?:string) {
+    let scopes: string | undefined = platform === 'instagram' ? 'messaging,analytics' : 'messaging'
+    if (platform === 'instagram' && reconnect) {
+      const previous = await account(reconnect)
+      if (previous._id !== reconnect || previous.profileId !== profileId || previous.platform !== platform) {
+        throw new ZernioError('profile_mismatch')
+      }
+      // A legacy unscoped connection keeps the provider's original full areas.
+      scopes = previous.scopeAreas
+        ? [...new Set([...previous.scopeAreas, 'messaging', 'analytics'])].join(',')
+        : undefined
+    }
+    return get('connect/'+platform,z.object({authUrl:z.url()}),{
+      profileId, redirect_url:redirect, scopes, ...(platform==='whatsapp'?{onboarding:'api'}:{}), reconnectAccountId:reconnect,
+    })
+  }
   return {
     attachment:(lookup:{accountId:string;conversationId:string;messageId:string;index:number})=>get('inbox/conversations/'+encodeURIComponent(lookup.conversationId)+'/messages/'+encodeURIComponent(lookup.messageId)+'/attachments/'+lookup.index,z.object({url:z.url()}),{accountId:lookup.accountId,format:'json'}),
-    account:(accountId:string)=>get('accounts/'+encodeURIComponent(accountId),z.object({account:accountSchema})).then(v=>v.account),
-    connect:(platform:'whatsapp'|'instagram',profileId:string,redirect:string,reconnect?:string)=>get('connect/'+platform,z.object({authUrl:z.url()}),{
-      profileId,redirect_url:redirect,scopes:'messaging',...(platform==='whatsapp'?{onboarding:'api'}:{}),reconnectAccountId:reconnect,
-    }),
+    account, connect,
     conversations:(accountId:string,profileId:string,cursor?:string,updatedSince?:string)=>get('inbox/conversations',z.object({
       data:z.array(conversationSchema),pagination,sync:z.object({nextUpdatedSince:date.nullable()}).optional(),meta:z.object({accountsFailed:z.number().default(0)}).optional(),
     }),{accountId,profileId,limit:'100',cursor,updatedSince,sortOrder:'desc'}),

@@ -22,6 +22,10 @@ Para llevar Inbox Zernio al servidor, ver **[configuración y estado de producci
 
 La ampliación multimedia de Inbox incorpora adjuntos, notas de voz y reacciones. Las tres migraciones ya están aplicadas en Supabase Koi. Para publicar la API y el worker y validar cada canal, consultar la [guía de Inbox multimedia](docs/inbox-multimedia.md).
 
+## Estadísticas de canales
+
+El panel de anuncios a WhatsApp vincula la inversión con las consultas recibidas en el inbox oficial. El panel de Instagram consulta las métricas de la cuenta profesional para el período elegido. Las conexiones, cobertura y verificaciones se describen en [Estadísticas de WhatsApp e Instagram](docs/estadisticas-canales.md).
+
 ## Desarrollo
 
 Requiere Node.js 24.14.0 y npm.

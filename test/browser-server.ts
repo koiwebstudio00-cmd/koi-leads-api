@@ -75,6 +75,9 @@ const store:UserStore = {
     catch (error) { chatError(error as {code?:string;message?:string}) }
   }),
   crm:(action,data) => query(async tx => {
+    if (action === 'stats') {
+      return (await tx.query<{result:unknown}>('select koi_stats_command($1) as result',[JSON.stringify(data)])).rows[0]!.result
+    }
     if (action === 'campaign_recipients') {
       return (await tx.query<{result:unknown}>('select koi_campaign_recipient_picker($1,$2,$3,$4,$5,$6) as result',
         [data.listId,data.search,data.province,data.contact,data.page,data.selected??null])).rows[0]!.result
@@ -120,6 +123,29 @@ const store:UserStore = {
   },
 }
 const server = createApp({
+  statistics: async (request, url, actor) => {
+    if (actor.membership.workspace_id !== workspace) throw new ApiError(403,'Sin permiso.')
+    if (request.method !== 'GET') throw new ApiError(405,'Solo lectura en esta prueba.')
+    const from = Date.parse(url.searchParams.get('from') ?? '')
+    const to = Date.parse(url.searchParams.get('to') ?? '')
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from >= to) throw new ApiError(422,'Período de prueba inválido.')
+    const meta = { state:'ready', updatedAt:new Date().toISOString(), coverageFrom:'2026-01-01' }
+    if (url.pathname === '/api/crm/stats/whatsapp') {
+      const week = to - from <= 7 * 86_400_000
+      const ads = [
+        { id:'creative-a', name:'Video del estudio', spend:week ? 5000 : 10000, consultations:week ? 2 : 4 },
+        { id:'creative-b', name:'Foto de producto', spend:5000, consultations:0 },
+      ]
+      const totals = { spend: ads[0]!.spend + ads[1]!.spend, consultations: ads[0]!.consultations }
+      return { ...meta, groups:[{ ...totals, currency:'ARS', campaigns:[{ id:'campaign-mobiliario',name:'Mobiliario',...totals,ads }] }],
+        unattributed:2, pendingCampaign:1, canConnect:true }
+    }
+    if (url.pathname === '/api/crm/stats/instagram') {
+      return { ...meta, accountName:'Koi Estudio', reach:812, views:1203, interactions:0, followers:128, followersChange:-4,
+        followerCoverage:{ from:'2026-11-01',to:'2026-11-16' } }
+    }
+    throw new ApiError(404,'Reporte de prueba desconocido.')
+  },
   inboxRichEnabled:true,inboxSendEnabled:true,
   inboxMedia:async lookup=>{
     const samples=[

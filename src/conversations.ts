@@ -90,6 +90,13 @@ export type SyncChatHistory = (target: { instance: string; peer: string }, page:
 export async function chatRoute(request: IncomingMessage, url: URL, command: ChatCommand, readBody: (limit?: number) => Promise<unknown>, readMedia?: ReadChatMedia, syncHistory?: SyncChatHistory, relayMedia?: (lookup: AttachmentLookup) => Promise<ChatAttachment>) {
   const path = url.pathname.slice('/api/conversations'.length)
   if (path === '/accounts' && request.method === 'GET') return { status: 200, data: await command('accounts', {}) }
+  if (path === '/index' && request.method === 'GET') {
+    const input = z.object({
+      after: z.uuid().optional(),
+      ids: z.string().transform(value => value.split(',')).pipe(z.array(z.uuid()).min(1).max(100)).optional(),
+    }).strict().refine(value => !(value.after && value.ids), 'Use after or ids').parse(Object.fromEntries(url.searchParams))
+    return { status: 200, data: await command('inbox_index', input) }
+  }
   if (path === '' && request.method === 'GET') {
     const input = z.object({
       search: z.string().trim().max(100).default(''), page: z.coerce.number().int().min(1).max(10000).default(1),

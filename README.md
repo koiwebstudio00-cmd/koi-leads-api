@@ -213,3 +213,7 @@ Cambios de comportamiento:
 - `GET /api/crm/stats?from=…&to=…` (ISO 8601 con offset, máximo 400 días) devuelve `kpis`, `campaignRecipients`, `funnel` (foto actual de etapas) y `daily` por día en hora de Tucumán. Los indicadores de periodo son: contactados (envío saliente aceptado o destinatario de campaña aceptado), interesados, ganados, perdidos y errores (chats y destinatarios fallidos). La fecha usada para contactados es la de creación del mensaje o la de última actualización del destinatario.
 
 Validación local: `npm run typecheck` sin errores y 84 pruebas aprobadas, incluidas las de `test/chat-inbox.test.ts` y `test/stats.test.ts` sobre PGlite. `test/postgres.integration.ts` requiere Postgres real y no se corrió en esta entrega.
+
+## Bandeja local y selector de números — 20/11/2026
+
+Se agrega `/api/conversations/index` para cargar todos los resúmenes y actualizar chats individuales. Requiere la migración `20261119154650_koi_chat_inbox_index.sql` antes de publicar API y frontend. El frontend usa un selector desplegable de cuentas con contadores y filtros locales. Cambios preparados para commit local; migración y publicación pendientes, sin push. [Arquitectura, pruebas y orden de publicación](docs/bandeja-chats-local.md). Los workers existentes siguen funcionando sin cambios.

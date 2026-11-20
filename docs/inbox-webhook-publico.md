@@ -1,5 +1,7 @@
 # Activar el webhook público de Inbox
 
+> Documento del piloto local, conservado como referencia. Para la entrega en servidor, usar [Inbox: producción](inbox-produccion.md). No seguir el esquema de worker local como instalación definitiva.
+
 Preparación del 20/11/2026. Las cuatro migraciones Inbox están aplicadas. El envío y la recepción por historial funcionan en local; el webhook público todavía no está registrado.
 
 ## Alcance inmediato

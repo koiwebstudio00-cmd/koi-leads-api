@@ -18,6 +18,8 @@ Backend independiente de Koi Leads, con Node.js 24 y TypeScript. Este repositori
 
 Para activar el worker y el webhook en Dokploy: **[guía de despliegue de campañas](docs/despliegue-campanas.md)**. El código no habilita envíos por sí solo; `KOI_SEND_ENABLED` comienza en `false`. `src/import-worker.ts` sigue siendo exclusivo del análisis de archivos; el nuevo proceso de campañas es `src/worker.ts`.
 
+Para llevar Inbox Zernio al servidor, ver **[configuración y estado de producción](docs/inbox-produccion.md)**: explica los accesos existentes, API, worker, frontend y verificaciones pendientes.
+
 ## Desarrollo
 
 Requiere Node.js 24.14.0 y npm.

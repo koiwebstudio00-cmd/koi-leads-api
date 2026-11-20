@@ -1,6 +1,6 @@
 # Bandeja local por número — actualización 20/11/2026
 
-Implementación preparada para commits locales de API y frontend. La migración y la publicación en producción siguen pendientes; esta entrega no hace push.
+Migración aplicada y verificada en Supabase el 20/11/2026. API y frontend permanecen en commits locales, pendientes de publicación; no se hizo push ni se modificaron workers.
 
 ## Comportamiento
 
@@ -20,13 +20,13 @@ Los workers siguen a cargo de la entrega durable, reintentos controlados, orden 
 
 ## Base y seguridad
 
-Migración `20261119154650_koi_chat_inbox_index.sql`: índice parcial `(workspace_id,id)` y función privada con `search_path=''`, validación de membresía y ámbito derivado de `auth.uid()`. El wrapper público sigue siendo `SECURITY INVOKER`. Se mantiene el endpoint paginado anterior para compatibilidad. Los filtros locales no son controles de autorización: el servidor determina qué workspace se puede cargar.
+Migración `20261120010432_koi_chat_inbox_index.sql`: índice parcial `(workspace_id,id)` y función privada con `search_path=''`, validación de membresía y ámbito derivado de `auth.uid()`. El wrapper público sigue siendo `SECURITY INVOKER`. Se mantiene el endpoint paginado anterior para compatibilidad. Los filtros locales no son controles de autorización: el servidor determina qué workspace se puede cargar.
 
 Este diseño está pensado para el volumen actual (94 conversaciones visibles comprobadas el 19/11). Si crece a decenas de miles, medir tamaño, tiempo de carga y memoria; considerar índice persistente o sincronización incremental con cursor de cambios y virtualización. El cursor por UUID de esta entrega es de paginación, no un registro de cambios: inserciones anteriores al cursor se recuperan por eventos y reconciliación.
 
 ## Publicación y reversión
 
-1. Aplicar la migración nueva en Supabase, después de las existentes.
+1. Migración aplicada: `20261120010432_koi_chat_inbox_index.sql`. No volver a ejecutarla en el proyecto Koi existente; en instalaciones nuevas, aplicar la secuencia completa.
 2. Publicar la API que expone `/conversations/index` y verificar con una sesión de usuario autorizada.
 3. Publicar el frontend. No requiere reiniciar ni cambiar los workers o credenciales.
 4. Revisar dos cuentas, búsqueda, responsable, archivados, actualización entrante y reconexión.
@@ -43,8 +43,16 @@ El ajuste del selector del 20/11 se comprobó con TypeScript, lint, build y el r
 
 ### Avisos preexistentes de Supabase
 
-Se consultaron los advisors de seguridad y rendimiento el 20/11 antes del commit. La migración del índice aún no está aplicada: esos resultados describen la base existente y no validan el nuevo esquema local. La revisión local de la migración conserva autorización por membresía, `search_path` vacío, wrapper invoker y ausencia de permiso `anon` para la nueva función privada.
+Se consultaron los advisors de seguridad y rendimiento el 20/11 antes del commit. Se repitió la consulta de advisors después de aplicar la migración: no aparecieron avisos nuevos de seguridad. Rendimiento agregó el aviso informativo de índice aún sin uso para el índice recién creado; el frontend y la API todavía no lo consumen en producción. La revisión local de la migración conserva autorización por membresía, `search_path` vacío, wrapper invoker y ausencia de permiso `anon` para la nueva función privada.
 
 Los advisors señalan permisos de ejecución de la función existente `public.koi_stats_command(p_data jsonb)` para [anon](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable) y [authenticated](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable), además de [protección de contraseñas filtradas desactivada](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection). Requieren revisión independiente de esta entrega; no se cambiaron permisos ni configuración remota. Los avisos informativos sobre RLS sin políticas incluyen tablas privadas con acceso por funciones, por lo que no corresponde abrirlas agregando políticas automáticamente.
 
 Rendimiento informa [claves foráneas sin índice](https://supabase.com/docs/guides/database/database-linter?lint=0001_unindexed_foreign_keys), [evaluaciones RLS por fila](https://supabase.com/docs/guides/database/database-linter?lint=0003_auth_rls_initplan) y [políticas permisivas múltiples](https://supabase.com/docs/guides/database/database-linter?lint=0006_multiple_permissive_policies) en el esquema existente, también en tablas ajenas a esta función. No se añadieron índices ajenos al flujo de la bandeja.
+
+## Aplicación en Supabase — 20/11/2026
+
+La migración se aplicó al proyecto Koi `avqhjbrcbgqhelfkcist` mediante `apply_migration`. Supabase asignó la versión `20261120010432`; el archivo local se renombró para coincidir con el historial remoto, conservando exactamente el SQL del commit `f44a42e`.
+
+La consulta se verificó dentro de una transacción con rol `authenticated` y membresía existente, sin devolver textos de mensajes ni modificar datos: 92 conversaciones con mensajes (2 archivadas), cargadas en un solo bloque; las otras 2 de las 94 filas existentes no tienen mensajes y se excluyen correctamente. La consulta dirigida devuelve un chat, las cuentas siguen siendo 2 y el listado anterior sigue respondiendo. La vista previa tiene como máximo 300 caracteres. También se comprobó el rechazo de un usuario sin membresía, la ausencia de permisos `anon`, el wrapper invoker y la validez del índice.
+
+El historial remoto no registra las versiones locales `20261112120000` y `20261112140000`, aunque existen cambios de esquema asociados. No se intentó volver a aplicarlas ni reparar ese historial en esta operación; conciliarlo antes de ejecutar un `db push` global. Esta aplicación se limitó a la migración nueva de la bandeja.

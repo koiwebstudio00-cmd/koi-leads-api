@@ -216,4 +216,4 @@ Validación local: `npm run typecheck` sin errores y 84 pruebas aprobadas, inclu
 
 ## Bandeja local y selector de números — 20/11/2026
 
-Se agrega `/api/conversations/index` para cargar todos los resúmenes y actualizar chats individuales. Requiere la migración `20261119154650_koi_chat_inbox_index.sql` antes de publicar API y frontend. El frontend usa un selector desplegable de cuentas con contadores y filtros locales. Cambios preparados para commit local; migración y publicación pendientes, sin push. [Arquitectura, pruebas y orden de publicación](docs/bandeja-chats-local.md). Los workers existentes siguen funcionando sin cambios.
+Se agrega `/api/conversations/index` para cargar todos los resúmenes y actualizar chats individuales. La migración `20261120010432_koi_chat_inbox_index.sql` ya está aplicada y verificada en Supabase. El frontend usa un selector desplegable de cuentas con contadores y filtros locales. Pendiente publicar API y luego frontend; no se hizo push. [Arquitectura, pruebas y orden de publicación](docs/bandeja-chats-local.md). Los workers existentes siguen funcionando sin cambios.

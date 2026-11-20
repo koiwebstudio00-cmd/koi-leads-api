@@ -123,7 +123,7 @@ Requisitos transversales:
 
 ## 6. Etapas de desarrollo
 
-La base de datos/compatibilidad (etapa 1), los componentes compartidos (etapa 2), las conexiones, recepción e historial (etapa 3) y la bandeja de lectura con Realtime (etapa 4) están implementados y validados localmente. Las etapas 5–7 y la activación con cuentas reales siguen pendientes. Cada entrega debe incluir sus pruebas y documentación pertinente antes de avanzar a activación. Detalle y límites: [Inbox: etapa 1](inbox-etapa-1.md), [Inbox: etapa 2](inbox-etapa-2.md), [Inbox: etapa 3](inbox-etapa-3.md) e [Inbox: etapa 4](inbox-etapa-4.md).
+La base de datos/compatibilidad (etapa 1), los componentes compartidos (etapa 2), las conexiones, recepción e historial (etapa 3) y la bandeja de lectura con Realtime (etapa 4) están implementados y validados localmente. Las migraciones de etapas 1, 3 y 4 ya están aplicadas en Supabase y el entorno local está preparado en la rama `dev`: ver [estado y variables](inbox-dev.md). Las etapas 5–7 y la conexión/validación con cuentas reales siguen pendientes. Cada entrega debe incluir sus pruebas y documentación pertinente antes de avanzar a activación. Detalle y límites: [Inbox: etapa 1](inbox-etapa-1.md), [Inbox: etapa 2](inbox-etapa-2.md), [Inbox: etapa 3](inbox-etapa-3.md) e [Inbox: etapa 4](inbox-etapa-4.md).
 
 ### Etapa 1 — Contratos, datos y compatibilidad
 

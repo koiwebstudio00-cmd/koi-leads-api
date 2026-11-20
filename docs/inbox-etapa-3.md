@@ -1,5 +1,7 @@
 # Inbox: etapa 3 — conexiones, recepción e historial
 
+> Actualización de activación: migraciones de etapas 1, 3 y 4 aplicadas en Supabase; código en `dev` y entorno local preparado. Las notas de validación local siguientes describen la entrega original. Estado actual y variables: [Inbox en dev](inbox-dev.md).
+
 Fecha: 20/11/2026. Estado: implementada y validada localmente; activación y prueba con cuentas reales pendientes. No se aplicaron migraciones remotas, no se crearon credenciales y no se desplegaron servicios.
 
 ## Qué está implementado
@@ -42,7 +44,7 @@ La atribución recibida en webhooks se conserva en `inbox_attribution`. El conte
 
 ## Base de datos y permisos
 
-Migración local: `20261120135825_koi_inbox_ingestion.sql`, creada con Supabase CLI. Depende de la migración de etapa 1.
+Migración local: `20261120115127_koi_inbox_ingestion.sql`, creada con Supabase CLI. Depende de la migración de etapa 1.
 
 - Nuevas tablas privadas: bindings de máquinas, estados de conexión, entregas recibidas, trabajos de sincronización y contexto histórico.
 - Estado y fecha de comprobación en cuentas; fechas separadas de entrada viva/salida válida en conversaciones; descriptores de adjuntos en mensajes.

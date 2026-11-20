@@ -1,5 +1,7 @@
 # Inbox: lectura, organización y Realtime — etapa 4
 
+> Actualización de activación: migraciones de etapas 1, 3 y 4 aplicadas en Supabase; código en `dev` y entorno local preparado. Las notas de validación local siguientes describen la entrega original. Estado actual y variables: [Inbox en dev](inbox-dev.md).
+
 Estado al 20/11/2026: implementado y validado **localmente**. No se aplicaron migraciones remotas, no se conectaron cuentas reales y no se realizó commit, push ni despliegue en esta entrega. Depende de las etapas 1–3. El envío sigue reservado para la etapa 5.
 
 ## Experiencia disponible
@@ -28,7 +30,7 @@ Realtime actualiza la interfaz; el worker de recepción/historial de etapa 3 sig
 
 ## API y base de datos
 
-Migración local creada con Supabase CLI: `20261120142342_koi_inbox_read_model.sql`. Se aplica después de las migraciones de etapas 1 y 3. Añade progreso/revisión de lectura, índices, funciones de consulta, triggers de invalidación y las dos tablas públicas a `supabase_realtime` cuando existe esa publicación.
+Migración local creada con Supabase CLI: `20261120115133_koi_inbox_read_model.sql`. Se aplica después de las migraciones de etapas 1 y 3. Añade progreso/revisión de lectura, índices, funciones de consulta, triggers de invalidación y las dos tablas públicas a `supabase_realtime` cuando existe esa publicación.
 
 `public.koi_inbox_query(action,data)` solo puede ejecutarse con `authenticated`; verifica la membresía y deriva el workspace desde `auth.uid()`. Los helpers privados no son ejecutables directamente por el navegador. Los mensajes de un lead eliminado dejan de estar disponibles mediante la API. No se usa `service_role` para las consultas del usuario.
 

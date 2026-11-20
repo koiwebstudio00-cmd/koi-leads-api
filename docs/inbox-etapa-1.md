@@ -1,11 +1,13 @@
 # Inbox — etapa 1: datos y contratos
 
+> Actualización de activación: migraciones de etapas 1, 3 y 4 aplicadas en Supabase; código en `dev` y entorno local preparado. Las notas de validación local siguientes describen la entrega original. Estado actual y variables: [Inbox en dev](inbox-dev.md).
+
 Fecha: 20 de noviembre de 2026.
 Estado: implementado y validado localmente. Sin conexión a Zernio, migración remota, despliegue ni activación de envíos.
 
 ## Implementación
 
-- Migración `20261120132912_koi_inbox_foundation.sql`, creada con Supabase CLI y ejecutada en Postgres embebido (PGlite) durante los tests.
+- Migración `20261120114933_koi_inbox_foundation.sql`, creada con Supabase CLI y ejecutada en Postgres embebido (PGlite) durante los tests.
 - Tablas públicas de cuentas y conversaciones de Inbox, con lectura limitada al workspace y sin mutaciones directas desde el navegador.
 - Tablas privadas de identidades, mensajes, lecturas, eventos, cola, referencias de archivos y atribución.
 - Referencias compuestas que impiden cruzar workspace, cuenta, canal, contacto y conversación.

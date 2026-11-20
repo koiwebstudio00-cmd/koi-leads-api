@@ -1,9 +1,11 @@
 // Servidor exclusivo de pruebas: API/parser reales, PostgreSQL embebido y Auth sintética.
 // Nunca se importa desde src/index.ts ni lee credenciales del entorno.
 import { seedInbox } from './inbox-fixture.ts'
+import {createInboxReactionCycle} from '../src/inbox/reactions.ts'
+import type {InboxTextSender} from '../src/inbox/send-provider.ts'
 import {createInboxSendCycle} from '../src/inbox/send-cycle.ts'
 import type {ZernioClient} from '../src/inbox/provider.ts'
-import { inboxQueryError } from '../src/inbox/read.ts'
+import { inboxQueryError,inboxRpc } from '../src/inbox/read.ts'
 import { PGlite, type Transaction } from '@electric-sql/pglite'
 import { readdir, readFile } from 'node:fs/promises'
 import { createApp } from '../src/app.ts'
@@ -26,12 +28,18 @@ const directory = new URL('../supabase/migrations/',import.meta.url)
 for (const file of (await readdir(directory)).filter(file => file.endsWith('.sql')).sort()) await db.exec(await readFile(new URL(file,directory),'utf8'))
 await db.exec(`insert into public.koi_workspaces(id,name) values('${workspace}','Estudio Koi'); insert into public.koi_workspace_members values('${workspace}','${user}','admin',now())`)
 await seedInbox(db,workspace,user)
+await db.query("update koi_private.inbox_messages set provider_attachments=provider_attachments || $1::jsonb where external_id='live'",[JSON.stringify([{type:'audio',mimeType:'audio/wav',filename:'tono.wav'},{type:'sticker',mimeType:'image/webp',filename:'sticker.webp'}])])
 await db.query("insert into koi_private.inbox_bindings values(session_user,$1,'browser-profile',$2,'ingest')",[workspace,user])
 const dispatch:MachineCommand=async<T>(action:string,data:Record<string,unknown>)=>(await db.query<{result:T}>('select koi_private.inbox_dispatch($1,$2) result',[action,JSON.stringify(data)])).rows[0]!.result
-const sendCycle=createInboxSendCycle(dispatch,{account:async(id:string)=>({_id:id,profileId:'browser-profile',platform:id==='fixture-wa'?'whatsapp':'instagram',isActive:true})} as unknown as ZernioClient,
- async input=>input.text==='fixture-unknown'?{outcome:'unknown',reason:'provider_timeout'}:{outcome:'accepted',externalId:'fixture-'+input.requestId},{profileId:'browser-profile',workspaceId:workspace})
+const browserProvider={account:async(id:string)=>({_id:id,profileId:'browser-profile',platform:id==='fixture-wa'?'whatsapp':'instagram',isActive:true})} as unknown as ZernioClient
+const fixtureSend:InboxTextSender = async input=>input.text==='fixture-unknown'?{outcome:'unknown',reason:'provider_timeout'}:{outcome:'accepted',externalId:'fixture-'+input.requestId}
+fixtureSend.upload=async()=> 'https://fixture.invalid/upload'
+const binding={profileId:'browser-profile',workspaceId:workspace,richEnabled:true}
+const sendCycle=createInboxSendCycle(dispatch,browserProvider,fixtureSend,binding)
+const reactDispatch:MachineCommand=async<T>(action:string,data:Record<string,unknown>)=>(await db.query<{result:T}>('select koi_private.inbox_reaction_dispatch($1,$2) result',[action,JSON.stringify(data)])).rows[0]!.result
+const reactCycle=createInboxReactionCycle(reactDispatch,browserProvider,'synthetic',binding,undefined,async()=>Response.json({success:true}))
 let sending=false
-const sendTimer=setInterval(()=>{if(sending)return;sending=true;void sendCycle().finally(()=>{sending=false})},100)
+const sendTimer=setInterval(()=>{if(sending)return;sending=true;void Promise.all([sendCycle(),reactCycle()]).finally(()=>{sending=false})},100)
 async function query<T>(fn:(tx:Transaction) => Promise<T>):Promise<T> {
   return db.transaction(async tx => {
     await tx.exec(`set local role authenticated; select set_config('request.jwt.claim.sub','${user}',true)`)
@@ -55,7 +63,11 @@ const inbound:MachineCommand=async <T>(action:string,data:Record<string,unknown>
   (await db.query<{result:T}>('select koi_private.worker_command($1,$2) as result',[action,JSON.stringify(data)])).rows[0]!.result
 const store:UserStore = {
   inbox:(action,data)=>query(async tx=>{
-    try{return (await tx.query<{result:unknown}>(['send','resolve_send'].includes(action)?'select koi_inbox_send($1,$2) result':'select koi_inbox_query($1,$2) result',[action,JSON.stringify(data)])).rows[0]!.result}
+    try{
+      const {name,args}=inboxRpc(action,data)
+      const params='action' in args?[action,JSON.stringify(data)]:[JSON.stringify(data)]
+      return (await tx.query<{result:unknown}>(`select ${name}(${params.map((_,i)=>'$'+(i+1)).join(',')}) result`,params)).rows[0]!.result
+    }
     catch(error){inboxQueryError(error as {code?:string})}
   }),
   chat:(action,data) => query(async tx => {
@@ -108,8 +120,18 @@ const store:UserStore = {
   },
 }
 const server = createApp({
-  inboxSendEnabled:true,
-  inboxMedia:async lookup=>({mime:lookup.index===0?'image/png':'application/pdf',name:lookup.name,base64:lookup.index===0?'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j6iQAAAAASUVORK5CYII=':Buffer.from('%PDF-1.7 synthetic').toString('base64')}),
+  inboxRichEnabled:true,inboxSendEnabled:true,
+  inboxMedia:async lookup=>{
+    const samples=[
+      ['image/png','iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j6iQAAAAASUVORK5CYII='],
+      ['application/pdf',Buffer.from('%PDF-1.7 synthetic').toString('base64')],
+      ['audio/wav','UklGRhQBAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YfAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIA='],
+      ['image/webp','UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA'],
+    ] as const
+    const sample=samples[lookup.index]
+    if(!sample)throw new ApiError(404,'Archivo de prueba inexistente.')
+    return {mime:sample[0],name:lookup.name,base64:sample[1]}
+  },
   readChatMedia: async ({providerId}) => {
     if (providerId!=='sticker-e2e') throw new ApiError(404,'Archivo de prueba no encontrado.')
     return 'UklGRkoAAABXRUJQVlA4ID4AAABQAwCdASoYABgAPm00lkekIyIhKAgAgA2JZQB2APwAAIMoIAD+7xUH//3eb9vN+3m/4aP//npmvMH9NAAAAA=='

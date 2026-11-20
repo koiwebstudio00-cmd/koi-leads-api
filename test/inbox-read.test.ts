@@ -101,6 +101,12 @@ test('media follows vetted hosts and never forwards the provider token to a CDN'
  })
  assert.equal((await read(lookup)).base64,Buffer.from('image').toString('base64'))
  assert.ok(calls[0]!.url.includes('accountId=authorized'));assert.equal(calls[0]!.authorization,'Bearer synthetic-secret');assert.equal(calls[1]!.authorization,null)
+ const cdnRead = createInboxReadMedia({} as ZernioClient, 'secret', async (input, init) => {
+   assert.equal(String(input), 'https://image.fbcdn.net/sticker')
+   assert.equal(new Headers(init?.headers).get('authorization'), null)
+   return new Response('sticker', {headers:{'content-type':'image/webp'}})
+ })
+ assert.equal((await cdnRead({...lookup, channel:'whatsapp', sourceUrl:'https://image.fbcdn.net/sticker'})).mime,'image/webp')
  let hits=0
  await assert.rejects(createInboxReadMedia(provider('https://image.fbcdn.net/test'),'secret',async()=>{hits++;return new Response(null,{status:302,headers:{location:'https://127.0.0.1/private'}})})(lookup))
  assert.equal(hits,1)
@@ -113,4 +119,41 @@ test('HTTP media checks visibility first and sending remains disabled by default
  await assert.rejects(inboxReadRoute(request,url,async()=>{throw new Error('denied')},async()=>({}),async()=>{providerCalls++;return {base64:'',mime:'',name:''}}),/denied/)
  assert.equal(providerCalls,0)
  await assert.rejects(inboxReadRoute({method:'POST'} as IncomingMessage,new URL(`http://local/api/inbox/conversations/${f.waChat}/messages`),async()=>null,async()=>({})),/todavía no está habilitado/)
+})
+
+test('a real-shaped WhatsApp sticker survives ingestion, scoped capture and browser read',async()=>{
+ const {normalizeEvent}=await import('../src/inbox/provider.ts')
+ const {createReceiveCycle}=await import('../src/inbox/receive-cycle.ts')
+ const event=normalizeEvent({id:'test-event',event:'message.received',timestamp:new Date().toISOString(),
+   account:{platform:'whatsapp',accountId:'fixture-wa'},
+   message:{platformMessageId:'incoming-sticker',platform:'whatsapp',direction:'incoming',text:null,sentAt:new Date().toISOString(),
+     attachments:[{type:'sticker',mimeType:'image/webp',payload:{id:'12345678'}}],sender:{id:'sender'}},
+   conversation:{platformConversationId:'thread-fixture-wa',participantId:'sender'}})
+ assert.equal(event?.kind,'message')
+ if(event?.kind!=='message')throw new Error('expected message')
+ const msg=await db.query<{id:string}>("insert into koi_private.inbox_messages(workspace_id,account_id,conversation_id,external_id,direction,sent_at,status,provider_attachments) values($1,$2,$3,'incoming-sticker','in',now(),'received',$4) returning id",[w,f.wa,f.waChat,JSON.stringify(event.message.attachments)])
+ const target=msg.rows[0]!.id
+ const read=(actor:string,id=f.waChat)=>db.transaction(async tx=>{
+   await tx.exec('set local role authenticated')
+   await tx.query("select set_config('request.jwt.claim.sub',$1,true)",[actor])
+   return (await tx.query<{v:MediaLookup & {cached?:{base64:string;mime:string}}}>('select public.koi_inbox_received_media($1) v',[JSON.stringify({id,messageId:target,index:0})])).rows[0]!.v
+ })
+ assert.equal((await read(user)).mediaId,'12345678')
+ await denied(read(other),'42501')
+ await denied(read(user,f.igChat),'PT404')
+ await db.query("insert into koi_private.inbox_bindings values(session_user,$1,'fixture',$2,'ingest')",[w,user])
+ await db.query('delete from koi_private.inbox_received_cache where message_id<>$1',[target])
+ const bytes=Buffer.from('RIFFtestWEBP')
+ const load=createInboxReadMedia({} as ZernioClient,'fixture-secret',async(url,init)=>{
+   assert.equal(String(url),'https://zernio.com/api/v1/whatsapp/media/12345678?accountId=fixture-wa')
+   assert.equal(new Headers(init?.headers).get('authorization'),'Bearer fixture-secret')
+   return new Response(bytes,{headers:{'Content-Type':'image/webp'}})
+ })
+ const cycle=createReceiveCycle(async<T>(action:string,p:Record<string,unknown>)=>(await db.query<{v:T}>('select koi_private.inbox_receive_job($1,$2) v',[action,JSON.stringify(p)])).rows[0]!.v,load)
+ assert.equal(await cycle(),true)
+ assert.equal(await cycle(),false)
+ const cached=await read(user)
+ assert.deepEqual(Buffer.from(cached.cached!.base64,'base64'),bytes)
+ assert.equal(cached.cached!.mime,'image/webp')
+ await db.query('delete from koi_private.inbox_bindings where role_name=session_user')
 })

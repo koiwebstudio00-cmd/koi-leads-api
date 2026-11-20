@@ -37,8 +37,9 @@ async function readBytes(request: IncomingMessage, maxBytes: number) {
   return Buffer.concat(chunks)
 }
 
-export function createApp(options: { authorize: Authorize; origin: string; inboxSendEnabled?:boolean; inbox?: InboxService; inboxMedia?:InboxReadMedia; inboxWebhook?: (headers:IncomingHttpHeaders,raw:Buffer)=>Promise<unknown>; whatsapp?: WhatsAppManager; readChatMedia?: ReadChatMedia; relayChatMedia?: RelayChatMedia; syncChatHistory?: SyncChatHistory; evolution?: EvolutionConnection; webhook?: (header: string | string[] | undefined, body: () => Promise<unknown>) => Promise<unknown> }) {
+export function createApp(options: { authorize: Authorize; origin: string; inboxSendEnabled?:boolean; inboxRichEnabled?:boolean; inbox?: InboxService; inboxMedia?:InboxReadMedia; inboxWebhook?: (headers:IncomingHttpHeaders,raw:Buffer)=>Promise<unknown>; whatsapp?: WhatsAppManager; readChatMedia?: ReadChatMedia; relayChatMedia?: RelayChatMedia; syncChatHistory?: SyncChatHistory; evolution?: EvolutionConnection; webhook?: (header: string | string[] | undefined, body: () => Promise<unknown>) => Promise<unknown> }) {
   let uploads = 0
+  let activeInboxPosts = 0
   const server = createServer(async (request, response) => {
     const requestId = randomUUID()
     response.setHeader('X-Request-Id', requestId)
@@ -51,7 +52,7 @@ export function createApp(options: { authorize: Authorize; origin: string; inbox
       if (origin && origin !== options.origin) throw new ApiError(403, 'Origen no permitido.')
       if (origin) response.setHeader('Access-Control-Allow-Origin', origin)
       if (request.method === 'OPTIONS') {
-        response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS')
+        response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, OPTIONS')
         response.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, Idempotency-Key')
         response.writeHead(204); response.end(); return
       }
@@ -78,7 +79,13 @@ export function createApp(options: { authorize: Authorize; origin: string; inbox
       }
       if(path.startsWith('/api/inbox/')){
         if(!store.inbox)throw new ApiError(503,'Inbox no disponible.')
-        send(200,await inboxReadRoute(request,url,store.inbox,()=>readBody(request),options.inboxMedia,options.inboxSendEnabled));return
+        const posting=request.method==='POST' && path.endsWith('/messages')
+        if(posting && activeInboxPosts>=4)throw new ApiError(429,'Hay varios archivos en cola. Volvé a intentar en unos segundos.')
+        if(posting)activeInboxPosts++
+        try{
+          send(200,await inboxReadRoute(request,url,store.inbox,limit=>readBody(request,limit),options.inboxMedia,options.inboxSendEnabled,options.inboxRichEnabled))
+        }finally{if(posting)activeInboxPosts--}
+        return
       }
       if (path === '/api/integrations/evolution/status' && request.method === 'GET') {
         if (!options.evolution) { send(200, { state: 'not_configured', instanceName: null, checkedAt: null }); return }

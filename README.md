@@ -20,6 +20,8 @@ Para activar el worker y el webhook en Dokploy: **[guía de despliegue de campa�
 
 Para llevar Inbox Zernio al servidor, ver **[configuración y estado de producción](docs/inbox-produccion.md)**: explica los accesos existentes, API, worker, frontend y verificaciones pendientes.
 
+La ampliación multimedia de Inbox incorpora adjuntos, notas de voz y reacciones. Las tres migraciones ya están aplicadas en Supabase Koi. Para publicar la API y el worker y validar cada canal, consultar la [guía de Inbox multimedia](docs/inbox-multimedia.md).
+
 ## Desarrollo
 
 Requiere Node.js 24.14.0 y npm.

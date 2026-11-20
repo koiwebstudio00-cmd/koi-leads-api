@@ -2,6 +2,8 @@
 
 Actualizado el 20/11/2026. Esta guía reemplaza el esquema de piloto con worker local de `inbox-webhook-publico.md`. Describe el despliegue definitivo de **lo implementado hasta etapa 5**; no afirma que todas las etapas del módulo estén terminadas ni que producción ya esté actualizada.
 
+Para publicar la versión multimedia posterior a la etapa 5, seguir la [guía de activación y pruebas](inbox-multimedia.md). Las tres migraciones adicionales ya están aplicadas en Supabase Koi. La configuración y los commits que siguen documentan el despliegue de texto de la etapa 5.
+
 ## Alcance y estado real
 
 - Backend de Inbox: commit `f1dd20e`, rama `dev`.
@@ -127,7 +129,7 @@ No es necesario aplicar una nueva migración para trasladar lo implementado a Do
 
 - API saludable; webhook con firma inválida rechazado con 401 y firma válida aceptado después de persistir.
 - Evento técnico procesado por el worker del servidor con el worker local detenido.
-- Docker HEALTHCHECK actual comprueba el latido de **recepción**. No certifica por sí solo los ciclos de envío: con envío habilitado comprobar también que `/tmp/koi-inbox-send-1-heartbeat` y `/tmp/koi-inbox-send-2-heartbeat` se actualizan, además de `/tmp/koi-inbox-ingest-heartbeat`.
+- La imagen multimedia comprueba el latido de recepción y los ciclos activos según la configuración. Con envío habilitado comprueba ambos ciclos de despacho. Con multimedia habilitada comprueba también la captura de medios, y con ambas opciones activas comprueba las reacciones.
 - Mensaje real entrante visible una sola vez y en la cuenta correcta; respuesta de prueba aceptada por el proveedor; fuera de ventana, envío bloqueado.
 - Estados de entrega/lectura solo cuando el proveedor los informa. Timeout incierto no debe provocar reenvío automático.
 - Reconexión del navegador recupera datos; reinicio del worker recupera trabajos sin duplicar envíos.

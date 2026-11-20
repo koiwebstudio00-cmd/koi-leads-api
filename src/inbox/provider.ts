@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { normalizeReaction } from './reactions.ts'
 
 const id=z.string().min(1).max(200)
 const date=z.iso.datetime({offset:true})
@@ -15,10 +16,23 @@ export const conversationSchema=z.object({
   metadata:z.record(z.string(),z.unknown()).nullish(),adAttribution:z.record(z.string(),z.unknown()).nullish(),
 })
 export type ProviderConversation=z.infer<typeof conversationSchema>
-const attachment=z.object({type:z.string(),originalType:z.string().optional(),mimeType:z.string().optional(),filename:z.string().nullish()})
+const attachment = z.object({
+  type: z.string(), originalType: z.string().nullish(), mimeType: z.string().nullish(),
+  filename: z.string().nullish(), url: z.string().max(16384).nullish(),
+  payload: z.object({id: z.string().max(200).nullish()}).nullish(),
+}).transform(({ payload, url, ...media }) => ({
+  ...media,
+  ...(payload?.id ? { mediaId: payload.id } : {}),
+  ...(url ? { sourceUrl: url } : {}),
+}))
+const messageContext = {
+  metadata: z.object({quotedMessageId: id.nullish()}).nullish(),
+  reactions: z.array(z.object({emoji:z.string(),fromMe:z.boolean(),reactedAt:date})).nullish(),
+}
 export const messageSchema=z.object({
   id,conversationId:id,accountId:id,platform:channel,message:z.string().max(10000).nullable(),
-  direction:z.enum(['incoming','outgoing']),createdAt:date,attachments:z.array(attachment).default([]),
+  direction:z.enum(['incoming','outgoing']),createdAt:date,attachments:z.array(attachment).nullish().transform(v=>v??[]),
+  ...messageContext,
 })
 export const pagination=z.object({hasMore:z.boolean(),nextCursor:z.string().max(4000).nullable()}).superRefine((p,ctx)=>{
   if(p.hasMore&&!p.nextCursor)ctx.addIssue({code:'custom',message:'Missing next cursor'})
@@ -66,17 +80,19 @@ export type ZernioClient=ReturnType<typeof createZernioClient>
 
 export const envelope=z.object({id,event:z.string().min(1).max(100),timestamp:date,test:z.boolean().optional()}).passthrough()
 const webhookMessage=z.object({platformMessageId:id,platform:channel,direction:z.enum(['incoming','outgoing']),
-  text:z.string().max(10000).nullable(),sentAt:date,attachments:z.array(attachment).default([]),
+  text:z.string().max(10000).nullable(),sentAt:date,attachments:z.array(attachment).nullish().transform(v=>v??[]),
+  ...messageContext,
   sender:z.object({id,name:z.string().optional(),username:z.string().optional(),phoneNumber:z.string().nullish(),businessScopedUserId:id.optional()})})
 export function normalizeEvent(payload:unknown){
   const base=envelope.parse(payload)
-  if(base.test||!['message.received','message.sent','message.delivered','message.read','message.failed','account.connected','account.disconnected'].includes(base.event))return null
+  if(base.test||!['message.received','message.sent','message.delivered','message.read','message.failed','account.connected','account.disconnected','reaction.received'].includes(base.event))return null
   const parsed=z.object({account:z.object({accountId:id.optional(),id:id.optional(),profileId:id.optional(),platform:z.string()})}).parse(payload)
   const parsedChannel=channel.safeParse(parsed.account.platform)
   if(!parsedChannel.success)return null
   const platform=parsedChannel.data
   const accountId=parsed.account.accountId??parsed.account.id
   if(!accountId)throw new ZernioError('event_account_missing')
+  if(base.event==='reaction.received')return {kind:'reaction' as const,accountId,profileId:parsed.account.profileId,platform,reaction:normalizeReaction(payload)}
   if(base.event.startsWith('account.'))return {kind:'account' as const,accountId,profileId:parsed.account.profileId,platform}
   const event=z.object({message:webhookMessage,conversation:z.object({platformConversationId:id,participantId:id.optional(),participantName:z.string().optional(),participantUsername:z.string().optional()}),
     metadata:z.record(z.string(),z.unknown()).nullish()}).parse(payload)
@@ -90,6 +106,7 @@ export function normalizeEvent(payload:unknown){
     conversation:{externalId:c.platformConversationId,participantId:participant,displayName:c.participantName||(incoming?m.sender.name:'')||'',username:c.participantUsername||(incoming?m.sender.username:null)||null,
       phone:incoming&&platform==='whatsapp'&&m.sender.phoneNumber?m.sender.phoneNumber.replace(/^\+/,''):null},
     message:{externalId:m.platformMessageId,direction:incoming?'in':'out',body:m.text??'',sentAt:m.sentAt,
-      historical:false,attachments:m.attachments,delivery:base.event==='message.read'?'read':base.event==='message.delivered'?'delivered':base.event==='message.failed'?'error':incoming?null:'sent'},
+      historical:false,attachments:m.attachments,quotedExternalId:m.metadata?.quotedMessageId??event.metadata?.quotedMessageId,
+      reactions:m.reactions??undefined,delivery:base.event==='message.read'?'read':base.event==='message.delivered'?'delivered':base.event==='message.failed'?'error':incoming?null:'sent'},
     metadata:event.metadata??{},timestamp:base.timestamp}
 }

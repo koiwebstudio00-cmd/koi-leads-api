@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 const optional = <T extends z.ZodType>(schema: T) => z.preprocess(value => value === '' ? undefined : value, schema.optional())
 const configSchema = z.object({
+  KOI_INBOX_RICH_ENABLED: z.enum(['true','false']).default('false'),
   KOI_INBOX_SEND_ENABLED: z.enum(['true','false']).default('false'),
   KOI_INBOX_GATEWAY_DATABASE_URL: optional(z.string().min(1)),
   ZERNIO_API_KEY: optional(z.string().min(16).max(512).regex(/^[\x21-\x7e]+$/)),

@@ -17,6 +17,7 @@ export const inboxIdentity = z.object({
 }).strict()
 
 export const replyWindow = z.object({
+  mode: z.enum(['standard','human_agent','closed']).optional(),
   canReply: z.boolean(),
   reason: z.enum(['open', 'expired', 'missing_inbound', 'invalid_inbound', 'disconnected']),
   expiresAt: timestamp.nullable(), evaluatedAt: timestamp,

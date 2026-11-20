@@ -48,6 +48,7 @@ export function createInboxIngestCycle(command:MachineCommand,provider:ZernioCli
         }
         if(account.channel!==event.platform)throw new ZernioError('event_account_mismatch')
         await command('finish_event',{id:item.id,lease:item.lease,account,
+          ...(event.kind==='reaction'?{reaction:event.reaction}:{}),
           ...(event.kind==='message'?{conversation:event.conversation,message:event.message,metadata:event.metadata}:{})})
       }catch(error){await failed('fail_event',item,error)}
     }
@@ -72,7 +73,7 @@ export function createInboxIngestCycle(command:MachineCommand,provider:ZernioCli
         const page=await provider.messages(job.externalAccountId,job.conversation_key,job.cursor??undefined)
         if(page.messages.some(m=>m.accountId!==job.externalAccountId||m.platform!==job.channel))throw new ZernioError('history_account_mismatch')
         await command('finish_sync',{id:job.id,lease:job.lease,cursor:page.pagination.hasMore?page.pagination.nextCursor:null,
-          messages:page.messages.map(m=>({externalId:m.id,direction:m.direction==='incoming'?'in':'out',body:m.message??'',sentAt:m.createdAt,historical:true,attachments:m.attachments,delivery:null}))})
+          messages:page.messages.map(m=>({externalId:m.id,direction:m.direction==='incoming'?'in':'out',body:m.message??'',sentAt:m.createdAt,historical:true,attachments:m.attachments,quotedExternalId:m.metadata?.quotedMessageId,reactions:m.reactions??undefined,delivery:null}))})
       }
     }catch(error){await failed('fail_sync',job,error)}
     return worked

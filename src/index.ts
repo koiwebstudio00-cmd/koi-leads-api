@@ -34,7 +34,7 @@ const inbox=inboxMachine?createInboxService({command:inboxMachine.command,provid
   workspaceId:config.KOI_ZERNIO_WORKSPACE_ID!,profileId:config.ZERNIO_PROFILE_ID!,origin:config.KOI_APP_ORIGIN}):undefined
 const inboxWebhook=inboxMachine?createInboxWebhook(config.ZERNIO_WEBHOOK_SECRET!,inboxMachine.command):undefined
 const inboxMedia=config.ZERNIO_API_KEY?createInboxReadMedia(createZernioClient(config.ZERNIO_API_KEY),config.ZERNIO_API_KEY):undefined
-const server = createApp({ inboxSendEnabled:config.KOI_INBOX_SEND_ENABLED==='true',inbox,inboxWebhook,inboxMedia, origin: config.KOI_APP_ORIGIN, authorize: createAuthorizer(config.KOI_SUPABASE_URL, config.KOI_SUPABASE_PUBLISHABLE_KEY), evolution, webhook, whatsapp, readChatMedia: chatProvider?.read, relayChatMedia: config.KOI_RELAY_CHAT_MEDIA === 'true' ? createChatMediaRelay() : undefined, syncChatHistory })
+const server = createApp({ inboxRichEnabled:config.KOI_INBOX_RICH_ENABLED==='true',inboxSendEnabled:config.KOI_INBOX_SEND_ENABLED==='true',inbox,inboxWebhook,inboxMedia, origin: config.KOI_APP_ORIGIN, authorize: createAuthorizer(config.KOI_SUPABASE_URL, config.KOI_SUPABASE_PUBLISHABLE_KEY), evolution, webhook, whatsapp, readChatMedia: chatProvider?.read, relayChatMedia: config.KOI_RELAY_CHAT_MEDIA === 'true' ? createChatMediaRelay() : undefined, syncChatHistory })
 server.listen(config.PORT, '0.0.0.0', () => console.log(`Koi API listening on ${config.PORT}`))
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {

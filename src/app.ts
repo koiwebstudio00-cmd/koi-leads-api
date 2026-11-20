@@ -37,7 +37,7 @@ async function readBytes(request: IncomingMessage, maxBytes: number) {
   return Buffer.concat(chunks)
 }
 
-export function createApp(options: { authorize: Authorize; origin: string; inbox?: InboxService; inboxMedia?:InboxReadMedia; inboxWebhook?: (headers:IncomingHttpHeaders,raw:Buffer)=>Promise<unknown>; whatsapp?: WhatsAppManager; readChatMedia?: ReadChatMedia; relayChatMedia?: RelayChatMedia; syncChatHistory?: SyncChatHistory; evolution?: EvolutionConnection; webhook?: (header: string | string[] | undefined, body: () => Promise<unknown>) => Promise<unknown> }) {
+export function createApp(options: { authorize: Authorize; origin: string; inboxSendEnabled?:boolean; inbox?: InboxService; inboxMedia?:InboxReadMedia; inboxWebhook?: (headers:IncomingHttpHeaders,raw:Buffer)=>Promise<unknown>; whatsapp?: WhatsAppManager; readChatMedia?: ReadChatMedia; relayChatMedia?: RelayChatMedia; syncChatHistory?: SyncChatHistory; evolution?: EvolutionConnection; webhook?: (header: string | string[] | undefined, body: () => Promise<unknown>) => Promise<unknown> }) {
   let uploads = 0
   const server = createServer(async (request, response) => {
     const requestId = randomUUID()
@@ -78,7 +78,7 @@ export function createApp(options: { authorize: Authorize; origin: string; inbox
       }
       if(path.startsWith('/api/inbox/')){
         if(!store.inbox)throw new ApiError(503,'Inbox no disponible.')
-        send(200,await inboxReadRoute(request,url,store.inbox,()=>readBody(request),options.inboxMedia));return
+        send(200,await inboxReadRoute(request,url,store.inbox,()=>readBody(request),options.inboxMedia,options.inboxSendEnabled));return
       }
       if (path === '/api/integrations/evolution/status' && request.method === 'GET') {
         if (!options.evolution) { send(200, { state: 'not_configured', instanceName: null, checkedAt: null }); return }

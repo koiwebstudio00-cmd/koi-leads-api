@@ -241,6 +241,10 @@ Pestaña Inbox independiente con filtros locales, selector de cuentas, historial
 
 Validación local: 122 pruebas backend, 95 frontend y 18 recorridos Chrome aprobados entre regresiones e Inbox. Sin migración remota, cuentas reales, commit, push ni despliegue. [API, límites, pruebas y orden de activación](docs/inbox-etapa-4.md).
 
+## Inbox — envío de texto, etapa 5
+
+Implementado en `dev`: cola durable, ventana de 24 horas comprobada al aceptar y despachar, idempotencia, conciliación de webhooks y resultados inciertos. El mismo proceso de Inbox despacha en ciclos independientes del historial. Migración `20261120123733` aplicada con autorización explícita; API y worker locales tienen `KOI_INBOX_SEND_ENABLED=true`. No se enviaron mensajes de prueba a contactos reales. [Contratos, pruebas y activación](docs/inbox-etapa-5.md).
+
 ## Entorno dev y Supabase aplicado — 20/11/2026
 
-Código guardado en `dev`. Las tres migraciones Inbox están aplicadas en el proyecto Koi y sus archivos tienen las versiones remotas; API/frontend locales preparados, sin push ni despliegue. [Estado, variables y pasos para abrir Inbox](docs/inbox-dev.md). Este estado reemplaza las notas anteriores de migraciones pendientes. Zernio todavía no tiene cuentas vinculadas ni worker activo.
+Código en `dev`. Las cuatro migraciones Inbox están aplicadas en el proyecto Koi y sus archivos tienen las versiones remotas; API/frontend locales preparados, sin push ni despliegue. Zernio tiene las cuentas WhatsApp e Instagram registradas y el worker local importa el historial y tiene habilitado el despacho de texto. `npm run setup:inbox -- --sync-accounts` prepara los dos accesos limitados de PostgreSQL y adopta cuentas existentes; `npm run worker:inbox-ingest` carga `.env.inbox-worker`. Falta el webhook HTTPS público para recibir eventos inmediatos desde Zernio. [Estado, variables y pasos para abrir Inbox](docs/inbox-dev.md). Este estado reemplaza las notas anteriores de migraciones pendientes.

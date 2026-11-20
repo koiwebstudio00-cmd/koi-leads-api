@@ -62,8 +62,11 @@ export function createInboxIngestCycle(command:MachineCommand,provider:ZernioCli
         const page=await provider.conversations(job.externalAccountId,expected.profileId,job.cursor??undefined,job.updated_since)
         if(page.meta?.accountsFailed)throw new ZernioError('history_partial_failure')
         if(page.data.some(c=>c.accountId!==job.externalAccountId||c.platform!==job.channel))throw new ZernioError('history_account_mismatch')
-        if(!page.pagination.hasMore&&!page.sync?.nextUpdatedSince)throw new ZernioError('history_checkpoint_missing')
-        await command('finish_sync',{id:job.id,lease:job.lease,cursor:page.pagination.hasMore?page.pagination.nextCursor:null,updatedSince:page.sync?.nextUpdatedSince,
+        // Some provider deployments still return a full listing without the documented sync envelope.
+        // Keep the old watermark in that mode; advancing it locally could skip late/replayed history.
+        const checkpoint=page.sync===undefined?job.updated_since:page.sync.nextUpdatedSince
+        if(!page.pagination.hasMore&&!checkpoint)throw new ZernioError('history_checkpoint_missing')
+        await command('finish_sync',{id:job.id,lease:job.lease,cursor:page.pagination.hasMore?page.pagination.nextCursor:null,updatedSince:checkpoint,
           conversations:page.data.map(c=>({externalId:c.id,participantId:c.participantId,displayName:c.participantName??'',username:c.whatsappUsername??null,phone:null,metadata:{...(c.metadata??{}),...(c.adAttribution?{adAttribution:c.adAttribution}:{})}}))})
       }else{
         const page=await provider.messages(job.externalAccountId,job.conversation_key,job.cursor??undefined)

@@ -106,11 +106,11 @@ test('media follows vetted hosts and never forwards the provider token to a CDN'
  assert.equal(hits,1)
  await assert.rejects(createInboxReadMedia(provider('https://image.fbcdn.net/test'),'secret',async()=>new Response('x',{headers:{'content-length':String(21*1024*1024)}}))(lookup),/20 MiB/)
 })
-test('HTTP media checks visibility first and does not expose a send route',async()=>{
+test('HTTP media checks visibility first and sending remains disabled by default',async()=>{
  let providerCalls=0
  const request={method:'GET'} as IncomingMessage
  const url=new URL(`http://local/api/inbox/conversations/${f.waChat}/attachments?messageId=${randomUUID()}&index=0`)
  await assert.rejects(inboxReadRoute(request,url,async()=>{throw new Error('denied')},async()=>({}),async()=>{providerCalls++;return {base64:'',mime:'',name:''}}),/denied/)
  assert.equal(providerCalls,0)
- await assert.rejects(inboxReadRoute({method:'POST'} as IncomingMessage,new URL(`http://local/api/inbox/conversations/${f.waChat}/messages`),async()=>null,async()=>({})),/Método no permitido/)
+ await assert.rejects(inboxReadRoute({method:'POST'} as IncomingMessage,new URL(`http://local/api/inbox/conversations/${f.waChat}/messages`),async()=>null,async()=>({})),/todavía no está habilitado/)
 })

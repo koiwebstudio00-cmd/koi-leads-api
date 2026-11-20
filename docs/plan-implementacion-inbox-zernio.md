@@ -1,7 +1,7 @@
 # Plan de implementación — Inbox con Zernio
 
 Fecha: 20 de noviembre de 2026.
-Estado: bases de las etapas 1–3 implementadas y validadas localmente; etapas 4–7 y activación/prueba con cuentas reales pendientes.
+Estado: etapas 1–4 implementadas, migradas y con historial real importado. Etapa 5 de texto implementada, probada, migrada y habilitada localmente con autorización explícita. Etapas 6–7, webhook público y piloto real de envío pendientes. Ver [estado actual](inbox-dev.md) y [etapa 5](inbox-etapa-5.md).
 Repositorios: `koi-leads-api` (backend) y `koi-leads-web` (frontend).
 
 ## 1. Objetivo
@@ -66,7 +66,7 @@ Mantener API Node, Supabase y frontend React. Crear una cola durable y un worker
 
 Flujo entrante: `Zernio → webhook de API → evento persistido → procesamiento → base de datos → Realtime → Inbox`.
 
-Flujo saliente: `Inbox → API → cola durable → worker de Inbox → Zernio → eventos de confirmación`.
+Flujo saliente: `Inbox → API → cola durable → worker de Inbox → Zernio → eventos de confirmación`. Para simplificar la operación, recepción e historial comparten proceso con dos ciclos independientes de despacho, sin que una llamada de historial bloquee respuestas manuales. Se mantienen la cola y los permisos acotados existentes.
 
 El navegador consulta nuestra base mediante la API; no consulta Zernio en cada apertura o actualización de un chat. Los WebSockets notifican cambios; el worker conserva la responsabilidad del envío durable.
 
@@ -123,7 +123,7 @@ Requisitos transversales:
 
 ## 6. Etapas de desarrollo
 
-La base de datos/compatibilidad (etapa 1), los componentes compartidos (etapa 2), las conexiones, recepción e historial (etapa 3) y la bandeja de lectura con Realtime (etapa 4) están implementados y validados localmente. Las migraciones de etapas 1, 3 y 4 ya están aplicadas en Supabase y el entorno local está preparado en la rama `dev`: ver [estado y variables](inbox-dev.md). Las etapas 5–7 y la conexión/validación con cuentas reales siguen pendientes. Cada entrega debe incluir sus pruebas y documentación pertinente antes de avanzar a activación. Detalle y límites: [Inbox: etapa 1](inbox-etapa-1.md), [Inbox: etapa 2](inbox-etapa-2.md), [Inbox: etapa 3](inbox-etapa-3.md) e [Inbox: etapa 4](inbox-etapa-4.md).
+Las etapas 1–4 están implementadas y sus migraciones aplicadas en Supabase; las cuentas reales de Koi están registradas y el historial fue importado. La etapa 5 de respuesta manual de texto está implementada, probada con proveedor sintético, migrada y habilitada en API/worker locales en `dev`: ver [estado y variables](inbox-dev.md) y [etapa 5](inbox-etapa-5.md). Siguen pendientes el webhook público, el piloto real de respuesta y las etapas 6–7. Cada entrega debe incluir sus pruebas y documentación antes de activar sus capacidades. Detalle anterior: [etapa 1](inbox-etapa-1.md), [etapa 2](inbox-etapa-2.md), [etapa 3](inbox-etapa-3.md) y [etapa 4](inbox-etapa-4.md).
 
 ### Etapa 1 — Contratos, datos y compatibilidad
 

@@ -16,7 +16,8 @@
     "test:postgres": "node --test test/postgres.integration.ts",
     "worker:campaigns": "node --env-file-if-exists=.env src/worker.ts",
     "worker:chat": "node --env-file-if-exists=.env src/chat-worker.ts",
-    "worker:inbox-ingest": "node --env-file-if-exists=.env src/inbox/ingest-worker.ts"
+    "worker:inbox-ingest": "node --env-file-if-exists=.env.inbox-worker src/inbox/ingest-worker.ts",
+    "setup:inbox": "node scripts/provision-inbox.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.111.0",

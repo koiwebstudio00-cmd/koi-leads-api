@@ -1,5 +1,7 @@
 # Inbox: respuesta manual de texto — etapa 5
 
+> Actualización de cierre: API y worker ya están desplegados en Dokploy y frontend en Vercel, con texto habilitado y webhook activo. Los procesos locales se detuvieron. El usuario hará después la prueba con mensajes reales. Ver [estado productivo y evidencias](inbox-produccion.md). El contenido siguiente conserva la preparación y validación local previa.
+
 Estado al 20/11/2026: implementado y probado en `dev`, **migración aplicada en Supabase y envío habilitado en API/worker locales**. La aplicación necesitó autorización explícita por los nuevos permisos de despacho; el usuario la otorgó y la migración se completó. No se enviaron mensajes a contactos reales ni se hizo push o despliegue de servicios en producción.
 
 ## Arquitectura y alcance

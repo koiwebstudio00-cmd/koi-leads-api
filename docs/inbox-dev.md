@@ -1,5 +1,7 @@
 # Inbox en dev: Supabase aplicado y entorno local
 
+> Actualización de cierre: API y worker ya están desplegados en Dokploy y frontend en Vercel, con texto habilitado y webhook activo. Los procesos locales se detuvieron. El usuario hará después la prueba con mensajes reales. Ver [estado productivo y evidencias](inbox-produccion.md). El contenido siguiente conserva la preparación y validación local previa.
+
 Estado al 20/11/2026. Ambos repositorios están en la rama Git `dev`. Esto no crea una rama/instancia nueva de Supabase: el entorno local usa el proyecto Koi existente `avqhjbrcbgqhelfkcist` (`back_web`, workspace Estudio Koi). No se realizó push ni despliegue de API/frontend/workers.
 
 **Etapa 5 implementada, migrada y habilitada localmente con autorización explícita:** API y worker tienen `KOI_INBOX_SEND_ENABLED=true`. Se verificaron permisos, cola vacía, latidos y la interfaz con sesión real. No se enviaron mensajes de prueba a contactos. El historial de las cuentas reales continúa funcionando. Ver [etapa 5](inbox-etapa-5.md).

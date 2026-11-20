@@ -76,13 +76,15 @@ export function createImportStore(client: SupabaseClient, workspace: string, use
       if (phone) query = query.ilike('lead.phone', `%${phone}%`)
       const { data, error, count } = await query.order('created_at', { ascending: false }).order('lead_id').range((page - 1) * 50, page * 50 - 1)
       databaseError(error)
-      const schema = z.array(z.object({ lead: z.object({ revision: z.number().int(), id: z.uuid(), phone: z.string(), name: z.string(), company: z.string(), email: z.string(), source: z.string(), product: z.string(), extra: z.record(z.string(), z.string()), consent: z.enum(['unknown','granted','denied']) }) }))
+      const schema = z.array(z.object({ lead: z.object({ revision: z.number().int(), id: z.uuid(), phone: z.string().nullable(), name: z.string(), company: z.string(), email: z.string(), source: z.string(), product: z.string(), extra: z.record(z.string(), z.string()), consent: z.enum(['unknown','granted','denied']) }) }))
       const leads = schema.parse(data).map(row => row.lead)
       if (!leads.length) return { leads: [], total: count ?? 0 }
-      const { data: suppressed, error: suppressionError } = await client.from('koi_suppressions').select('phone').eq('workspace_id', workspace).in('phone', leads.map(lead => lead.phone))
+      const phones = leads.flatMap(lead => lead.phone ? [lead.phone] : [])
+      if (!phones.length) return { leads: leads.map(lead => ({ ...lead, suppressed: false })), total: count ?? 0 }
+      const { data: suppressed, error: suppressionError } = await client.from('koi_suppressions').select('phone').eq('workspace_id', workspace).in('phone', phones)
       databaseError(suppressionError)
       const blocked = new Set(suppressed?.map(row => row.phone as string))
-      return { leads: leads.map(lead => ({ ...lead, suppressed: blocked.has(lead.phone) })), total: count ?? 0 }
+      return { leads: leads.map(lead => ({ ...lead, suppressed: lead.phone !== null && blocked.has(lead.phone) })), total: count ?? 0 }
     },
     async report(id) {
       await store.draft(id)

@@ -1,5 +1,7 @@
 // Servidor exclusivo de pruebas: API/parser reales, PostgreSQL embebido y Auth sintética.
 // Nunca se importa desde src/index.ts ni lee credenciales del entorno.
+import { seedInbox } from './inbox-fixture.ts'
+import { inboxQueryError } from '../src/inbox/read.ts'
 import { PGlite, type Transaction } from '@electric-sql/pglite'
 import { readdir, readFile } from 'node:fs/promises'
 import { createApp } from '../src/app.ts'
@@ -21,6 +23,7 @@ await db.exec(`create role anon; create role authenticated; create schema auth; 
 const directory = new URL('../supabase/migrations/',import.meta.url)
 for (const file of (await readdir(directory)).filter(file => file.endsWith('.sql')).sort()) await db.exec(await readFile(new URL(file,directory),'utf8'))
 await db.exec(`insert into public.koi_workspaces(id,name) values('${workspace}','Estudio Koi'); insert into public.koi_workspace_members values('${workspace}','${user}','admin',now())`)
+await seedInbox(db,workspace,user)
 async function query<T>(fn:(tx:Transaction) => Promise<T>):Promise<T> {
   return db.transaction(async tx => {
     await tx.exec(`set local role authenticated; select set_config('request.jwt.claim.sub','${user}',true)`)
@@ -43,6 +46,10 @@ await db.query("insert into koi_private.machine_bindings values(session_user,$1,
 const inbound:MachineCommand=async <T>(action:string,data:Record<string,unknown>) =>
   (await db.query<{result:T}>('select koi_private.worker_command($1,$2) as result',[action,JSON.stringify(data)])).rows[0]!.result
 const store:UserStore = {
+  inbox:(action,data)=>query(async tx=>{
+    try{return (await tx.query<{result:unknown}>('select koi_inbox_query($1,$2) result',[action,JSON.stringify(data)])).rows[0]!.result}
+    catch(error){inboxQueryError(error as {code?:string})}
+  }),
   chat:(action,data) => query(async tx => {
     try { return (await tx.query<{result:unknown}>('select koi_chat_command($1,$2) as result',[action,JSON.stringify(data)])).rows[0]!.result }
     catch (error) { chatError(error as {code?:string;message?:string}) }
@@ -93,6 +100,7 @@ const store:UserStore = {
   },
 }
 const server = createApp({
+  inboxMedia:async lookup=>({mime:lookup.index===0?'image/png':'application/pdf',name:lookup.name,base64:lookup.index===0?'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j6iQAAAAASUVORK5CYII=':Buffer.from('%PDF-1.7 synthetic').toString('base64')}),
   readChatMedia: async ({providerId}) => {
     if (providerId!=='sticker-e2e') throw new ApiError(404,'Archivo de prueba no encontrado.')
     return 'UklGRkoAAABXRUJQVlA4ID4AAABQAwCdASoYABgAPm00lkekIyIhKAgAgA2JZQB2APwAAIMoIAD+7xUH//3eb9vN+3m/4aP//npmvMH9NAAAAA=='

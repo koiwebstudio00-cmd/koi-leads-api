@@ -1,13 +1,13 @@
 import type { IncomingMessage } from 'node:http'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
-import { leadInput } from './lead-input.ts'
+import { leadInput, phoneInput } from './lead-input.ts'
 import { ApiError } from './store.ts'
 
 export type CrmCommand = (action: string, data: Record<string, unknown>) => Promise<unknown>
 export const stageSchema = z.enum(['new','contacted','replied','interested','proposal','won','lost'])
 const product=z.enum(['','cubiko','zyro','toki','estudio'])
-const createLead=leadInput.omit({revision:true}).extend({product:product.default(''),listIds:z.array(z.uuid()).max(100).default([])}).strict()
+const createLead=leadInput.omit({revision:true}).extend({phone:phoneInput,product:product.default(''),listIds:z.array(z.uuid()).max(100).default([])}).strict()
 const bulk=z.object({operation:z.enum(['update','delete']),leads:z.array(z.object({id:z.uuid(),revision:z.number().int().nonnegative()}).strict()).min(1).max(5000),patch:z.object({product:product.optional(),stage:stageSchema.optional(),tags:z.array(z.string().trim().min(1).max(40)).max(20).optional(),assignedTo:z.uuid().nullable().optional(),addListId:z.uuid().optional(),removeListId:z.uuid().optional()}).strict().default({})}).strict()
 const filters = z.object({
   product:z.union([product,z.literal('unassigned')]).default(''),

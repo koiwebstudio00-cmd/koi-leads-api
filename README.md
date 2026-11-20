@@ -217,3 +217,26 @@ Validación local: `npm run typecheck` sin errores y 84 pruebas aprobadas, inclu
 ## Bandeja local y selector de números — 20/11/2026
 
 Se agrega `/api/conversations/index` para cargar todos los resúmenes y actualizar chats individuales. La migración `20261120010432_koi_chat_inbox_index.sql` ya está aplicada y verificada en Supabase. El frontend usa un selector desplegable de cuentas con contadores y filtros locales. Pendiente publicar API y luego frontend; no se hizo push. [Arquitectura, pruebas y orden de publicación](docs/bandeja-chats-local.md). Los workers existentes siguen funcionando sin cambios.
+
+## Inbox con Zernio — base de etapa 1, 20/11/2026
+
+Migración local y contratos para cuentas, identidades, conversaciones, mensajes y cola independiente. El CRM admite contactos sociales sin teléfono y los flujos EvoAPI conservan su validación telefónica. La política estricta de 24 horas está probada en TypeScript y SQL. No se aplicó la migración remota ni se activó la conexión/envío Zernio.
+
+Ver [estado y límites de etapa 1](docs/inbox-etapa-1.md) y [plan completo](docs/plan-implementacion-inbox-zernio.md).
+
+## Inbox — componentes compartidos, etapa 2
+
+El frontend ya reutiliza la UI de Conversaciones mediante componentes independientes del transporte EvoAPI. Esta etapa no cambia la API ni agrega migraciones; Inbox y la integración Zernio continúan pendientes de las etapas siguientes. Validación: 90 pruebas frontend y 14 recorridos Chrome aprobados. [Detalle, contratos y límites](docs/inbox-etapa-2.md).
+
+## Inbox — conexiones y recepción Zernio, etapa 3
+
+Backend opcional de conexión/reconexión, webhook firmado y worker independiente de recepción e historial. Normaliza los IDs del proveedor, deduplica, conserva fechas, reanuda páginas y actualiza mediante el punto de avance incremental. El frontend permite gestionar cuentas desde Configuración. El worker se ejecuta con `npm run worker:inbox-ingest` o `Dockerfile.inbox-ingest`; no envía mensajes ni reemplaza los workers EvoAPI.
+
+Migración local `20261120135825_koi_inbox_ingestion.sql`. Validación: 115 pruebas backend, 90 frontend y 17 recorridos Chrome aprobados. Sin activación remota ni cuentas reales conectadas. La pestaña de chats ya está implementada localmente en etapa 4; el almacenamiento permanente de medios sigue pendiente. [Implementación, variables, permisos y pasos de activación](docs/inbox-etapa-3.md).
+
+
+## Inbox — lectura y Realtime, etapa 4
+
+Pestaña Inbox independiente con filtros locales, selector de cuentas, historial/adjuntos, borradores, contador por usuario, archivado y panel CRM. Consulta autenticada con `koi_inbox_query`; Realtime publica solo cuentas y resúmenes, con reconciliación y respaldo periódico. Migra localmente `20261120142342_koi_inbox_read_model.sql`, después de etapas 1 y 3. El envío sigue deshabilitado hasta etapa 5.
+
+Validación local: 122 pruebas backend, 95 frontend y 18 recorridos Chrome aprobados entre regresiones e Inbox. Sin migración remota, cuentas reales, commit, push ni despliegue. [API, límites, pruebas y orden de activación](docs/inbox-etapa-4.md).

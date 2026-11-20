@@ -1,3 +1,8 @@
+import { createInboxReadMedia } from './inbox/media.ts'
+import { createInboxMachine } from './inbox/machine.ts'
+import { createZernioClient } from './inbox/provider.ts'
+import { createInboxService } from './inbox/service.ts'
+import { createInboxWebhook } from './inbox/webhook.ts'
 import { createChatMedia, createChatMediaRelay, type SyncChatHistory } from './conversations.ts'
 import { conversationEvents } from './conversation-events.ts'
 import { createWhatsAppManager } from './whatsapp.ts'
@@ -24,11 +29,16 @@ const syncChatHistory: SyncChatHistory | undefined = machine && chatProvider ? a
   if (messages.length) await machine.command('chat_history', { instance, events: messages })
   return { more: page < history.pages }
 } : undefined
-const server = createApp({ origin: config.KOI_APP_ORIGIN, authorize: createAuthorizer(config.KOI_SUPABASE_URL, config.KOI_SUPABASE_PUBLISHABLE_KEY), evolution, webhook, whatsapp, readChatMedia: chatProvider?.read, relayChatMedia: config.KOI_RELAY_CHAT_MEDIA === 'true' ? createChatMediaRelay() : undefined, syncChatHistory })
+const inboxMachine=config.KOI_INBOX_GATEWAY_DATABASE_URL?createInboxMachine(config.KOI_INBOX_GATEWAY_DATABASE_URL,config.KOI_DATABASE_CA_FILE):undefined
+const inbox=inboxMachine?createInboxService({command:inboxMachine.command,provider:createZernioClient(config.ZERNIO_API_KEY!),
+  workspaceId:config.KOI_ZERNIO_WORKSPACE_ID!,profileId:config.ZERNIO_PROFILE_ID!,origin:config.KOI_APP_ORIGIN}):undefined
+const inboxWebhook=inboxMachine?createInboxWebhook(config.ZERNIO_WEBHOOK_SECRET!,inboxMachine.command):undefined
+const inboxMedia=config.ZERNIO_API_KEY?createInboxReadMedia(createZernioClient(config.ZERNIO_API_KEY),config.ZERNIO_API_KEY):undefined
+const server = createApp({ inbox,inboxWebhook,inboxMedia, origin: config.KOI_APP_ORIGIN, authorize: createAuthorizer(config.KOI_SUPABASE_URL, config.KOI_SUPABASE_PUBLISHABLE_KEY), evolution, webhook, whatsapp, readChatMedia: chatProvider?.read, relayChatMedia: config.KOI_RELAY_CHAT_MEDIA === 'true' ? createChatMediaRelay() : undefined, syncChatHistory })
 server.listen(config.PORT, '0.0.0.0', () => console.log(`Koi API listening on ${config.PORT}`))
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
-    server.close(() => { void (machine?.close() ?? Promise.resolve()).finally(() => process.exit(0)) })
+    server.close(() => { void Promise.all([machine?.close(),inboxMachine?.close()]).finally(() => process.exit(0)) })
     setTimeout(() => process.exit(1), 10_000).unref()
   })
 }

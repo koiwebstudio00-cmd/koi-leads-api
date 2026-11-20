@@ -1,3 +1,4 @@
+import { createInboxQuery,type InboxQuery } from './inbox/read.ts'
 import { createChatStore, type ChatCommand } from './conversations.ts'
 import { createCrmStore, type CrmCommand } from './crm.ts'
 import { createClient } from '@supabase/supabase-js'
@@ -17,6 +18,7 @@ export type LeadList = { id: string; name: string; description: string; created_
 export type ListInput = { name: string; description: string }
 export type ListPage = { lists: LeadList[]; total: number }
 export type UserStore = {
+  inbox?: InboxQuery
   chat?: ChatCommand
   crm?: CrmCommand
   whatsapp?: WhatsAppStore
@@ -62,6 +64,7 @@ export function createAuthorizer(url: string, publishableKey: string): Authorize
     const record = z.object({ workspace_id: z.uuid(), role: z.enum(['admin', 'operator']), koi_workspaces: z.object({ name: z.string() }) }).parse(data[0])
     const membership: Membership = { workspace_id: record.workspace_id, role: record.role, workspace_name: record.koi_workspaces.name }
     return {
+      inbox: createInboxQuery(client),
       chat: createChatStore(client),
       crm: createCrmStore(client),
       whatsapp: createWhatsAppStore(client, membership.workspace_id),

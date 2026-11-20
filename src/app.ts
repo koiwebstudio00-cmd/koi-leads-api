@@ -1,3 +1,6 @@
+import { inboxReadRoute,type InboxReadMedia } from './inbox/read.ts'
+import type { InboxService } from './inbox/service.ts'
+import type { IncomingHttpHeaders } from 'node:http'
 import { chatRoute, type ReadChatMedia, type RelayChatMedia, type SyncChatHistory } from './conversations.ts'
 import { crmRoute } from './crm.ts'
 import { leadInput } from './lead-input.ts'
@@ -34,7 +37,7 @@ async function readBytes(request: IncomingMessage, maxBytes: number) {
   return Buffer.concat(chunks)
 }
 
-export function createApp(options: { authorize: Authorize; origin: string; whatsapp?: WhatsAppManager; readChatMedia?: ReadChatMedia; relayChatMedia?: RelayChatMedia; syncChatHistory?: SyncChatHistory; evolution?: EvolutionConnection; webhook?: (header: string | string[] | undefined, body: () => Promise<unknown>) => Promise<unknown> }) {
+export function createApp(options: { authorize: Authorize; origin: string; inbox?: InboxService; inboxMedia?:InboxReadMedia; inboxWebhook?: (headers:IncomingHttpHeaders,raw:Buffer)=>Promise<unknown>; whatsapp?: WhatsAppManager; readChatMedia?: ReadChatMedia; relayChatMedia?: RelayChatMedia; syncChatHistory?: SyncChatHistory; evolution?: EvolutionConnection; webhook?: (header: string | string[] | undefined, body: () => Promise<unknown>) => Promise<unknown> }) {
   let uploads = 0
   const server = createServer(async (request, response) => {
     const requestId = randomUUID()
@@ -59,9 +62,24 @@ export function createApp(options: { authorize: Authorize; origin: string; whats
         if (!options.webhook) throw new ApiError(503, 'Webhook no configurado.')
         send(200, await options.webhook(request.headers['x-koi-webhook-secret'], () => readBody(request, 262144))); return
       }
+      if(path==='/api/webhooks/zernio' && request.method==='POST'){
+        if(!options.inboxWebhook)throw new ApiError(503,'Webhook Inbox no configurado.')
+        send(200,await options.inboxWebhook(request.headers,await readBytes(request,1048576)));return
+      }
       const token = /^Bearer ([^\s]+)$/.exec(request.headers.authorization ?? '')?.[1]
       if (!token) throw new ApiError(401, 'Ingresá para continuar.')
       const store = await options.authorize(token)
+      if(path==='/api/inbox/connections'||path.startsWith('/api/inbox/connections/')){
+        if(!options.inbox){
+          if(path==='/api/inbox/connections'&&request.method==='GET'){send(200,{configured:false,accounts:[],failedEvents:0});return}
+          throw new ApiError(503,'Conexión Zernio no configurada.')
+        }
+        send(200,await options.inbox(request,url,store,()=>readBody(request)));return
+      }
+      if(path.startsWith('/api/inbox/')){
+        if(!store.inbox)throw new ApiError(503,'Inbox no disponible.')
+        send(200,await inboxReadRoute(request,url,store.inbox,()=>readBody(request),options.inboxMedia));return
+      }
       if (path === '/api/integrations/evolution/status' && request.method === 'GET') {
         if (!options.evolution) { send(200, { state: 'not_configured', instanceName: null, checkedAt: null }); return }
         if (store.membership.workspace_id !== options.evolution.workspaceId) throw new ApiError(403, 'Esta conexión no pertenece a tu espacio.')

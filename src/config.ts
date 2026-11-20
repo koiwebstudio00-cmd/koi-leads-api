@@ -2,6 +2,11 @@ import { z } from 'zod'
 
 const optional = <T extends z.ZodType>(schema: T) => z.preprocess(value => value === '' ? undefined : value, schema.optional())
 const configSchema = z.object({
+  KOI_INBOX_GATEWAY_DATABASE_URL: optional(z.string().min(1)),
+  ZERNIO_API_KEY: optional(z.string().min(16).max(512).regex(/^[\x21-\x7e]+$/)),
+  ZERNIO_WEBHOOK_SECRET: optional(z.string().min(32).max(256)),
+  ZERNIO_PROFILE_ID: optional(z.string().min(1).max(200)),
+  KOI_ZERNIO_WORKSPACE_ID: optional(z.uuid()),
   KOI_WEBHOOK_DATABASE_URL: optional(z.string().min(1)),
   KOI_EVOLUTION_WEBHOOK_SECRET: optional(z.string().min(32).max(256)),
   KOI_DATABASE_CA_FILE: optional(z.string().min(1)),
@@ -18,6 +23,8 @@ const configSchema = z.object({
   EVOLUTION_INSTANCE_NAME: optional(z.string().regex(/^[A-Za-z0-9_-]{1,100}$/)),
   KOI_EVOLUTION_WORKSPACE_ID: optional(z.uuid()),
 }).superRefine((value, context) => {
+  const inboxFields=['KOI_INBOX_GATEWAY_DATABASE_URL','ZERNIO_API_KEY','ZERNIO_WEBHOOK_SECRET','ZERNIO_PROFILE_ID','KOI_ZERNIO_WORKSPACE_ID'] as const
+  if(inboxFields.some(key=>value[key]!==undefined))for(const key of inboxFields)if(!value[key])context.addIssue({code:'custom',path:[key],message:'Completá la conexión Inbox'})
   if (value.KOI_RELAY_CHAT_MEDIA === 'true' && (!URL.canParse(value.KOI_APP_ORIGIN) ||
     !['localhost', '127.0.0.1', '[::1]'].includes(new URL(value.KOI_APP_ORIGIN).hostname))) {
     context.addIssue({ code: 'custom', path: ['KOI_RELAY_CHAT_MEDIA'], message: 'Disponible solo para la app local' })

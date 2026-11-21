@@ -1,21 +1,23 @@
 # Inbox: entrega para producción
 
-Actualizado el 20/11/2026. Esta guía reemplaza el esquema de piloto con worker local de `inbox-webhook-publico.md`. Describe el despliegue definitivo de **lo implementado hasta etapa 5**; no afirma que todas las etapas del módulo estén terminadas ni que producción ya esté actualizada.
+Actualizado el 20/11/2026. **Inbox de texto está desplegado en producción**, sin depender de procesos locales. Esta guía reemplaza el piloto con worker local de `inbox-webhook-publico.md`. El alcance publicado corresponde a lo implementado hasta etapa 5; la etapa 6 del plan completo sigue pendiente. El usuario hará después la prueba con mensajes reales.
 
 Para publicar la versión multimedia posterior a la etapa 5, seguir la [guía de activación y pruebas](inbox-multimedia.md). Las tres migraciones adicionales ya están aplicadas en Supabase Koi. La configuración y los commits que siguen documentan el despliegue de texto de la etapa 5.
 
 ## Alcance y estado real
 
-- Backend de Inbox: commit `f1dd20e`, rama `dev`.
-- Frontend de Inbox: commit `34efeea`, rama `dev`.
+- API y worker desplegados desde `main`: commit `d3e5f0e3b77e3604b22825b8f79d109f55c84b27` (incluye la implementación `f1dd20e`). Dokploy confirmó ambos despliegues como `Done`.
+- Frontend desplegado desde `main`: commit `34efeead80b3579bed2c072ffa14af394b56d699`. Vercel confirmó producción `Ready`, despliegue `2M5oyTYAr2UpBH8rdMUmPhoiaddr`.
 - Cuatro migraciones Inbox aplicadas a Supabase Koi; no volver a ejecutarlas ni hacer un `db push` global. Hay diferencias anteriores en el historial documentadas en `inbox-dev.md`.
 - Implementado: conexiones WhatsApp/Instagram, historial, bandeja separada, actualizaciones Realtime y respuestas de texto con ventana de 24 horas validada en servidor y worker.
 - Pendiente del plan completo: etapa 6 (adjuntos y audio salientes, circuito comercial completo) y cierre de etapa 7 (despliegue y validación real). No presentar esta entrega como el módulo completo terminado.
 - Despliegue completo autorizado: API, worker en Dokploy, frontend y envío de texto habilitado. El usuario confirmó conservar los accesos limitados dentro del Supabase existente. La autorización reemplaza el alcance del piloto local.
-- Worker creado en Dokploy: `koi-inbox-worker`, ID `xrf_T2pAV3Qrw2Wt3BSjw`, mismo proyecto/entorno que la API. Publicación y validación operativa todavía pendientes.
+- Worker creado en Dokploy: `koi-inbox-worker`, ID `xrf_T2pAV3Qrw2Wt3BSjw`, mismo proyecto/entorno que la API. Contenedor verificado en ejecución; recepción y dos ciclos de envío con latidos actualizados.
 - Frontend confirmado en Vercel: cuenta `koi-studios-projects`, proyecto `casadey-agent`, dominio `leads.koistudio.com.ar`, repositorio `koiwebstudio00-cmd/casadey-agent`, rama productiva `main`. El nombre histórico no identifica al cliente Casadey actual.
 - Archivos privados `.env.inbox-api-production` (6 variables) y `.env.inbox-worker-production` (5 variables) preparados con credenciales existentes, permisos `0600` y envío habilitado. No contienen credenciales administrativas ni requieren copiar un certificado; los Dockerfiles ya lo incorporan. Los archivos están ignorados por Git.
-- La transferencia de estos dos bloques al editor Environment de Dokploy requiere ayuda manual del usuario por una limitación del control del editor local. Conservar las variables previas de la API. No introducir los secretos en el chat.
+- El usuario cargó y guardó ambos bloques en Dokploy. Se verificaron claves requeridas, envío `true`, coincidencia de perfil/workspace/API key, ausencia de rutas locales y ausencia de claves duplicadas en la API. No se mostraron sus valores.
+- API y worker locales detenidos antes de arrancar el servicio remoto. La recepción y el despacho productivos no dependen de la computadora.
+- La rama `dev` conserva este registro de cierre posterior al despliegue; no se vuelve a publicar `main` solo por documentación para evitar reiniciar nuevamente los workers.
 
 ## Arquitectura final de esta entrega
 
@@ -67,10 +69,10 @@ ZERNIO_API_KEY=<clave existente>
 ZERNIO_WEBHOOK_SECRET=<secreto existente>
 ZERNIO_PROFILE_ID=6a836444c7be73897fe0a1a7
 KOI_ZERNIO_WORKSPACE_ID=727df779-b2eb-4485-9670-f1f7eb12e30e
-KOI_INBOX_SEND_ENABLED=false
+KOI_INBOX_SEND_ENABLED=true
 ```
 
-`false` es la configuración de instalación y comprobación de recepción. El estado operativo final de texto requiere `true` en **API y worker**, una vez que ambos estén desplegados y se haya autorizado esa activación. Cambiar la bandera no modifica la regla de 24 horas.
+El valor productivo vigente es `true` en **API y worker**, con autorización del usuario. Para una instalación futura, se puede comenzar con `false` mientras se verifica la recepción. Cambiar la bandera no modifica la regla de 24 horas.
 
 ### Worker nuevo: koi-inbox-worker
 
@@ -84,10 +86,10 @@ KOI_INBOX_INGEST_DATABASE_URL=<credencial existente del worker>
 ZERNIO_API_KEY=<misma clave existente>
 ZERNIO_PROFILE_ID=6a836444c7be73897fe0a1a7
 KOI_ZERNIO_WORKSPACE_ID=727df779-b2eb-4485-9670-f1f7eb12e30e
-KOI_INBOX_SEND_ENABLED=false
+KOI_INBOX_SEND_ENABLED=true
 ```
 
-El worker no necesita la contraseña de la API, el secreto del webhook ni una credencial administrativa. En la configuración operativa final se cambia su bandera a `true` junto con la de la API.
+El worker no necesita la contraseña de la API, el secreto del webhook ni una credencial administrativa. La bandera está configurada en `true`, igual que en la API.
 
 ### Frontend existente
 
@@ -135,7 +137,21 @@ No es necesario aplicar una nueva migración para trasladar lo implementado a Do
 - Reconexión del navegador recupera datos; reinicio del worker recupera trabajos sin duplicar envíos.
 - Conversaciones EvoAPI y campañas siguen operativas.
 
-Pruebas previas registradas: 134 backend y 97 frontend, además de tipos/lint/build. No sustituyen el piloto real. En esta revisión no se pudo construir Docker porque el daemon local estaba apagado. La configuración del servidor y la respuesta real por ambos canales siguen pendientes; **no hay un despliegue final verificado todavía**.
+## Resultado comprobado del despliegue
+
+- 134 pruebas backend y 97 frontend aprobadas; tipos, lint y build frontend completados. Docker local estaba apagado; las imágenes se construyeron y desplegaron correctamente en Dokploy.
+- API `/health` 200; webhook sin firma 401 con error específico de firma; evento técnico firmado 200 con `{received:true}`.
+- Evento firmado `f4f004d6-8c8e-416c-b3c6-5c0c36062566`: persistido y procesado por el worker remoto en aproximadamente 770 ms, estado `ignored`, un intento.
+- Webhook Zernio **`6b00a926968754b2787c0597`**, nombre `Koi Leads Inbox`, activo y restringido al perfil Koi. El webhook Toki anterior sigue sin modificarse.
+- Prueba oficial de Zernio: HTTP 200, `success:true`; evento `71690640-ba9a-47fe-a385-dad8f70d33af`, procesado en aproximadamente 867 ms, `ignored`, un intento. Son pruebas técnicas sin mensajes a contactos.
+- Worker remoto: contenedor `36dc57c0e961` en ejecución al verificar; `KOI_INBOX_SEND_ENABLED=true`; latidos de `ingest`, `send-1` y `send-2` con edad redondeada de 0 segundos. El identificador del contenedor cambiará con futuros despliegues.
+- Supabase: WhatsApp e Instagram conectados; cero eventos pendientes/fallidos y cero sincronizaciones fallidas; cola de salida vacía.
+- Navegador productivo autenticado: Inbox muestra 76 chats, actualizaciones en vivo e historial; una conversación con ventana abierta habilita el compositor de texto. No se escribió ni envió una respuesta de prueba.
+- Regresión productiva: Conversaciones abre y carga 90 chats de la bandeja Número de campañas. Dokploy muestra API, worker Inbox, ambos workers EvoAPI y Evolution activos.
+- Se comprobó la ausencia de los procesos locales de API/worker de Inbox después de detenerlos.
+- **Pendiente exclusivamente de prueba real:** el usuario indicó “Lo pruebo yo después”. No se verificó todavía una recepción real seguida de una respuesta real en ambos canales; los tests técnicos y la habilitación del compositor no equivalen a una entrega real a WhatsApp/Instagram.
+
+No se agregaron servicios externos, otra base, Redis ni n8n; se usó Supabase existente, API existente, un worker Inbox en el Dokploy existente y frontend existente en Vercel.
 
 ## Pausa y reversión
 

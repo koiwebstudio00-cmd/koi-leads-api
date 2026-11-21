@@ -43,6 +43,18 @@ npm run verify
 
 Las pruebas usan datos sintéticos y PostgreSQL embebido (PGlite); no requieren credenciales remotas. `src/contracts` contiene el contrato de importaciones y de estado Evolution. No hay imports hacia carpetas externas al repositorio. Cambios futuros del contrato HTTP deben coordinarse con el frontend.
 
+## Estructura y mantenimiento
+
+- `src/index.ts`: entrada HTTP; conecta CRM, importaciones, campañas, conversaciones, Inbox y estadísticas.
+- `src/worker-entry.ts`: entrada Docker de campañas o chats según `KOI_WORKER_KIND`; los comandos npm también permiten iniciar cada worker directamente.
+- `src/inbox/ingest-worker.ts` y `src/inbox/worker-health.ts`: proceso y comprobación de salud de Inbox.
+- `src/import-worker.ts`: análisis de archivos en un hilo iniciado por el servicio de importaciones.
+- `scripts`: aprovisionamiento de los roles y credenciales de los workers; se usan en las guías de operación.
+- `test`: pruebas, fixtures y servidor sintético usado por los recorridos del frontend. `test/helpers/inbox-reply-window.ts` contrasta la política SQL; no forma parte de la imagen productiva.
+- `supabase/migrations`, `supabase/bootstrap.sql` y `certs`: historial necesario para reconstruir y probar la base, alta inicial de administrador y certificado de conexión.
+
+La revisión del 21/11/2026 no encontró módulos de ejecución desconectados de estas entradas. Se trasladó la referencia de la ventana de respuesta a las pruebas y se retiró la primera versión del informe de chats, reemplazada por la v2. Las guías de despliegue y el historial de migraciones se conservan. Las verificaciones fechadas de este README describen entregas históricas.
+
 ## Configuración
 
 Copiar `.env.example` y completar los valores en el entorno del servidor. No subir `.env` a GitHub.

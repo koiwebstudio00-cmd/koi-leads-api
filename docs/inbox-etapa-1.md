@@ -14,7 +14,7 @@ Estado: implementado y validado localmente. Sin conexión a Zernio, migración r
 - Restricciones únicas para identidad por cuenta, eventos, mensajes y solicitudes de envío. Una conversación no puede tener dos despachos reservados o con resultado incierto a la vez.
 - RLS habilitada en todas las tablas nuevas. Los datos privados no tienen acceso de `anon`, `authenticated` ni de los roles existentes de EvoAPI.
 - Contratos Zod en `src/inbox/contracts.ts`. El cuerpo de envío no permite cuenta, destinatario, fecha, autor, plantillas ni `HUMAN_AGENT` aportados por el cliente.
-- Política de ventana en `src/inbox/reply-window.ts` y equivalente privado SQL. La fecha de vencimiento es la original entrante más 24 horas; el instante exacto de vencimiento queda cerrado. Fecha futura, ausente o cuenta desconectada bloquean la elegibilidad.
+- Política de ventana aplicada en SQL privado, con referencia de prueba en `test/helpers/inbox-reply-window.ts`. La fecha de vencimiento es la original entrante más 24 horas; el instante exacto de vencimiento queda cerrado. Fecha futura, ausente o cuenta desconectada bloquean la elegibilidad.
 
 ## Compatibilidad de contactos
 

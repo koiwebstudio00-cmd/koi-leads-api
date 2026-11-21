@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { readFile, readdir } from 'node:fs/promises'
 import { PGlite } from '@electric-sql/pglite'
-import { evaluateReplyWindow } from '../src/inbox/reply-window.ts'
+import { evaluateReplyWindow } from './helpers/inbox-reply-window.ts'
 import { inboxAccount, inboxSendInput, inboxAction, inboxIndexQuery } from '../src/inbox/contracts.ts'
 import { leadInput } from '../src/lead-input.ts'
 

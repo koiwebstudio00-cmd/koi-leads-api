@@ -6,7 +6,7 @@ Estado al 20/11/2026. Ambos repositorios están en la rama Git `dev`. Esto no cr
 
 ## Código y migraciones
 
-Los commits iniciales de la entrega completa son API `2102e6f` y frontend `ac30379`. Incluyen las etapas 1–4; los informes de `Claude outputs` también se guardaron en el backend. Los commits posteriores registran aplicación remota y preparación local.
+Los commits iniciales de la entrega completa son API `2102e6f` y frontend `ac30379`. Incluyen las etapas 1–4. El informe de revisión se conserva en `Claude outputs/reporte-mejoras-chats-leads-v2.md`; reemplaza la primera versión retirada en la limpieza del 21/11/2026. Los commits posteriores registran aplicación remota y preparación local.
 
 Se aplicaron estas cuatro migraciones y se alinearon los nombres locales con las versiones asignadas por Supabase:
 

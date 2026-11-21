@@ -1,9 +1,9 @@
-import type { InboxAccount, InboxReplyWindow } from './contracts.ts'
+import type { InboxAccount, InboxReplyWindow } from '../../src/inbox/contracts.ts'
 
 export const INBOX_REPLY_WINDOW_MS = 24 * 60 * 60 * 1000
 
-// Called with trusted provider dates and server time; never receipt time or UI time.
-// The database equivalent is tested against these decisions at the exact boundary.
+// Test reference for the SQL policy, which enforces the reply window in production.
+// Uses trusted provider dates and server time; never receipt time or UI time.
 export function evaluateReplyWindow(
   lastInboundAt: string | null,
   now: Date,

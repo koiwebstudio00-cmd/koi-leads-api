@@ -5,7 +5,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { PGlite } from '@electric-sql/pglite'
 import { seedInbox, inboxFixture as f } from './inbox-fixture.ts'
 import { normalizeReaction, sendInboxReaction } from '../src/inbox/reactions.ts'
-import { evaluateReplyWindow } from '../src/inbox/reply-window.ts'
+import { evaluateReplyWindow } from './helpers/inbox-reply-window.ts'
 import { createInboxTextSender } from '../src/inbox/send-provider.ts'
 
 const db=new PGlite()

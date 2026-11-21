@@ -4,13 +4,14 @@ Esta entrega extiende Inbox oficial. La API y el worker deben usar la misma vers
 
 ## Estado al 20 de noviembre de 2026
 
-Las tres migraciones están aplicadas en `back_web` (`avqhjbrcbgqhelfkcist`), el proyecto de Supabase de Koi Leads. Los archivos locales usan las versiones registradas en el historial remoto.
+Las migraciones de esta tabla están aplicadas en `back_web` (`avqhjbrcbgqhelfkcist`), el proyecto de Supabase de Koi Leads. Los archivos locales usan las versiones registradas en el historial remoto.
 
 | Versión aplicada | Migración | Función |
 | --- | --- | --- |
 | `20261120192229` | `koi_inbox_received_media` | Captura privada de adjuntos recibidos |
 | `20261120192350` | `koi_inbox_interactions` | Citas, reacciones y ventana de atención humana |
 | `20261120192538` | `koi_inbox_outbound_media` | Cola de envío con archivos y notas de voz |
+| `20261120205010` | `koi_inbox_instagram_reel_preview` | Identificador de los reels compartidos en el historial autorizado |
 
 Se verificaron en Supabase el trigger de recepción, la seguridad por fila y los permisos de las cuatro tablas privadas, las funciones de la API y el acceso del worker. La base también reconoció un documento de WhatsApp y una imagen de Instagram en pruebas de validación de formato.
 
@@ -28,11 +29,24 @@ La verificación local incluyó conversión de voz con FFmpeg, pruebas de la API
 
 El envío acepta archivos de hasta 8 MiB con límites inferiores por formato y plataforma. Instagram exige enviar archivo y texto por separado. Los binarios salientes se guardan en la base privada asociados al trabajo para su despacho y lectura posterior. Dimensionar el almacenamiento según el volumen de conversaciones. El worker prepara la carga al proveedor antes de verificar otra vez la ventana y despachar.
 
-En recepción, la API exige sesión y acceso al chat. Un proceso independiente intenta conservar una copia privada de los adjuntos entrantes recientes (hasta 8 MiB cada uno, siete días y 128 MiB por workspace). Fuera de esa caché, la API intenta la consulta autorizada al proveedor (hasta 20 MiB). Los archivos históricos dependen de que Zernio/Meta aún los tenga. El historial público del chat solo incluye la descripción del medio. La clave de Zernio se utiliza en el backend.
+En recepción, la API exige sesión y acceso al chat. Un proceso independiente intenta conservar una copia privada de los adjuntos entrantes recientes (hasta 8 MiB cada uno, siete días y 128 MiB por workspace). Fuera de esa caché, la API intenta la consulta autorizada al proveedor (hasta 20 MiB). Los archivos históricos dependen de que Zernio/Meta aún los tenga. El historial autorizado devuelve la descripción de cada adjunto y, para un enlace de reel reconocido, su identificador de Instagram. Los parámetros privados del enlace quedan fuera de la respuesta. La clave de Zernio se utiliza en el backend.
 
 WhatsApp admite recepción de stickers. El envío nativo de stickers personalizados de WhatsApp no figura en el contrato público de Zernio. Instagram ofrece el sticker saliente de corazón. Las citas salientes se habilitan solo en WhatsApp. La interfaz de Instagram identifica el contenido compartido según los metadatos disponibles.
 
+## Reels y acciones de contacto
+
+La proyección del historial reconoce enlaces de Instagram con ruta `/reel/<código>/` en adjuntos de tipo original `ig_reel` o `reel`. Funciona también para mensajes anteriores a la migración. El frontend construye la vista previa y el enlace a Instagram a partir del código. La visibilidad del reel depende de los permisos de la publicación.
+
+La ficha utiliza el usuario de Instagram guardado. Si falta, consulta `GET /api/inbox/conversations/{id}/instagram-profile`. El backend comprueba el acceso del operador al chat y la correspondencia de la cuenta con el perfil de Zernio antes de resolver el usuario del participante.
+
+Para WhatsApp, el selector consulta `GET /api/integrations/evolution/instances?senderPhones=1` y los chats del lead en `GET /api/conversations/by-lead/{leadId}`. Muestra las líneas conectadas con su etiqueta y, cuando Evolution lo informa, su teléfono. La combinación de lead e instancia determina qué chat se retoma. Si todavía no existe, se abre un borrador.
+
+En producción, publicar la API antes del frontend para que estén disponibles la consulta de perfiles y los teléfonos de las líneas. La migración de reels ya figura en el historial de `back_web`.
+
 ## Prueba de aceptación por cuenta
+
+- Abrir un chat de Instagram con un reel compartido y comprobar la vista previa y el enlace a la publicación. Con varios mensajes salientes leídos, comprobar que aparezca un único «Visto» bajo el último con lectura confirmada.
+- Abrir la ficha de un contacto de WhatsApp y probar el selector con una línea que ya tenga chat y otra que todavía no lo tenga. Comprobar el historial o el borrador correspondiente antes de enviar.
 
 - Usar dos cuentas de prueba, una por plataforma. Desde la aplicación oficial enviar texto, sticker, nota de voz, foto, video y un documento compatible. Comprobar identidad de la cuenta, orden, una sola copia y apertura o reproducción desde el chat. Repetir tras recargar.
 - Desde Koi responder con grabación, imagen, video y un documento válido. Verificar la recepción real, el tipo de mensaje y la capacidad de reproducirlo o abrirlo. En Instagram probar también el corazón. En WhatsApp comprobar que una grabación aparece como nota de voz.

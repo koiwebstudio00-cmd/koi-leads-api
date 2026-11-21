@@ -157,3 +157,18 @@ test('a real-shaped WhatsApp sticker survives ingestion, scoped capture and brow
  assert.equal(cached.cached!.mime,'image/webp')
  await db.query('delete from koi_private.inbox_bindings where role_name=session_user')
 })
+
+test('a saved Instagram reel exposes only its shortcode through authorized history',async()=>{
+ const clips=[
+  'https://www.instagram.com/reel/Studio_123-/?igsh=private-test',
+  'https://www.instagram.com.example.test/reel/Fake/',
+  'https://www.instagram.com/reel/Bad/extra/',
+ ]
+ await db.query("update koi_private.inbox_messages set provider_attachments=$2::jsonb where conversation_id=$1 and external_id='live'",[
+   f.igChat,JSON.stringify(clips.map(sourceUrl=>({type:'video',originalType:'ig_reel',sourceUrl}))),
+ ])
+ const result=await query<History>('messages',{id:f.igChat})
+ const attachments=result.messages.find(m=>m.body==='Consulta desde Instagram')!.attachments
+ assert.deepEqual(attachments.map(a=>(a as {instagramReelCode?:string}).instagramReelCode),['Studio_123-',undefined,undefined])
+ assert.ok(!JSON.stringify(result).includes('private-test'))
+})

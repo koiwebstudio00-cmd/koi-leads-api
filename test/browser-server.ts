@@ -28,6 +28,13 @@ const directory = new URL('../supabase/migrations/',import.meta.url)
 for (const file of (await readdir(directory)).filter(file => file.endsWith('.sql')).sort()) await db.exec(await readFile(new URL(file,directory),'utf8'))
 await db.exec(`insert into public.koi_workspaces(id,name) values('${workspace}','Estudio Koi'); insert into public.koi_workspace_members values('${workspace}','${user}','admin',now())`)
 await seedInbox(db,workspace,user)
+const igFixture = 'b1000000-0000-4000-8000-000000000002'
+await db.query("update koi_private.inbox_messages set provider_attachments=provider_attachments || $2::jsonb where conversation_id=$1 and external_id='live'", [
+  igFixture, JSON.stringify([{type:'video',originalType:'ig_reel',sourceUrl:'https://www.instagram.com/reel/Studio_123/?igsh=private-fixture'}]),
+])
+await db.query(`insert into koi_private.inbox_messages(workspace_id,account_id,conversation_id,external_id,direction,body,sent_at,status,delivery)
+  select workspace_id,account_id,conversation_id,'reply-'||n,'out','Respuesta leída '||n,sent_at-(3-n)*interval '1 minute','accepted','read'
+  from koi_private.inbox_messages cross join generate_series(1,2) n where conversation_id=$1 and external_id='live'`,[igFixture])
 await db.query("update koi_private.inbox_messages set provider_attachments=provider_attachments || $1::jsonb where external_id='live'",[JSON.stringify([{type:'audio',mimeType:'audio/wav',filename:'tono.wav'},{type:'sticker',mimeType:'image/webp',filename:'sticker.webp'}])])
 await db.query("insert into koi_private.inbox_bindings values(session_user,$1,'browser-profile',$2,'ingest')",[workspace,user])
 const dispatch:MachineCommand=async<T>(action:string,data:Record<string,unknown>)=>(await db.query<{result:T}>('select koi_private.inbox_dispatch($1,$2) result',[action,JSON.stringify(data)])).rows[0]!.result

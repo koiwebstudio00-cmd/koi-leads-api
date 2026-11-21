@@ -71,7 +71,7 @@ export function createApp(options: { authorize: Authorize; origin: string; stati
       const token = /^Bearer ([^\s]+)$/.exec(request.headers.authorization ?? '')?.[1]
       if (!token) throw new ApiError(401, 'Ingresá para continuar.')
       const store = await options.authorize(token)
-      if(path==='/api/inbox/connections'||path.startsWith('/api/inbox/connections/')){
+      if(path==='/api/inbox/connections'||path.startsWith('/api/inbox/connections/')||/^\/api\/inbox\/conversations\/[^/]+\/instagram-profile$/.test(path)){
         if(!options.inbox){
           if(path==='/api/inbox/connections'&&request.method==='GET'){send(200,{configured:false,accounts:[],failedEvents:0});return}
           throw new ApiError(503,'Conexión Zernio no configurada.')
@@ -97,7 +97,7 @@ export function createApp(options: { authorize: Authorize; origin: string; stati
         if (!options.whatsapp) throw new ApiError(503, 'Gestión de WhatsApp no configurada.')
         const match = /^\/api\/integrations\/evolution\/instances(?:\/([^/]+)\/(connect|restart|disconnect))?$/.exec(path)
         if (!match) throw new ApiError(404, 'Operación no encontrada.')
-        if (!match[1] && request.method === 'GET') { send(200, await options.whatsapp.list(store)); return }
+        if (!match[1] && request.method === 'GET') { send(200, await options.whatsapp.list(store,url.searchParams.get('senderPhones')==='1')); return }
         if (request.method === 'POST') {
           if (store.membership.role !== 'admin') throw new ApiError(403, 'Solo un administrador puede gestionar conexiones.')
           if (!match[1]) {

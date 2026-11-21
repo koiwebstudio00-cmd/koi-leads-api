@@ -24,6 +24,16 @@ export function inboxRpc(action:string,data:Record<string,unknown>){
  return {name:['send','resolve_send','local_media'].includes(action)?'koi_inbox_send':'koi_inbox_query',args:{action,data}}
 }
 export function createInboxQuery(client:SupabaseClient):InboxQuery{return async(action,data)=>{
+ if(action==='instagram_profile_locator'){
+   const access=await client.rpc('koi_inbox_query',{action:'messages',data:{id:data.id,limit:1}})
+   inboxQueryError(access.error)
+   const chat=access.data?.conversation
+   if(chat?.channel!=='instagram')throw new ApiError(404,'No encontramos ese contacto de Instagram.')
+   const conversation=await client.from('koi_inbox_conversations').select('external_id').eq('id',chat.id).eq('account_id',chat.accountId).single()
+   const account=await client.from('koi_inbox_accounts').select('external_id').eq('id',chat.accountId).eq('channel','instagram').single()
+   inboxQueryError(conversation.error);inboxQueryError(account.error)
+   return {conversationId:conversation.data!.external_id,accountId:account.data!.external_id}
+ }
  const rpc=inboxRpc(action,data)
  const result=await client.rpc(rpc.name,rpc.args);inboxQueryError(result.error);return result.data
 }}

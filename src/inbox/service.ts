@@ -30,6 +30,15 @@ export function createInboxService(options:{workspaceId:string;profileId:string;
   }
   return async(request:IncomingMessage,url:URL,store:UserStore,body:()=>Promise<unknown>)=>{
     await scoped(store,request.method!=='GET')
+    const profileRoute=/^\/api\/inbox\/conversations\/([^/]+)\/instagram-profile$/.exec(url.pathname)
+    if(profileRoute && request.method==='GET'){
+      if(!store.inbox)throw new ApiError(503,'Inbox no disponible.')
+      const id=z.uuid().parse(profileRoute[1])
+      const lookup=await store.inbox('instagram_profile_locator',{id}) as {accountId:string;conversationId:string}
+      const account=await provider.account(lookup.accountId)
+      if(account._id!==lookup.accountId || account.profileId!==profileId || account.platform!=='instagram')throw new ApiError(403,'El perfil pertenece a otra cuenta.')
+      return {username:await provider.instagramContact(lookup.accountId,lookup.conversationId)}
+    }
     const actorId=store.userId
     if(url.pathname==='/api/inbox/connections'&&request.method==='GET')return {configured:true,...await command<Record<string,unknown>>('list',{actorId})}
     if(url.pathname==='/api/inbox/connections/connect'&&request.method==='POST'){

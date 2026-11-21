@@ -2,10 +2,10 @@ import { z } from 'zod'
 import { ApiError, type UserStore } from './store.ts'
 import { createEvolutionConnection } from './evolution.ts'
 import type { EvolutionStatus } from './contracts/evolution.ts'
-export type WhatsAppInstance = { id:string; label:string; instanceName:string; campaignSender:boolean; status:EvolutionStatus }
+export type WhatsAppInstance = { id:string; label:string; instanceName:string; campaignSender:boolean; phone?:string; status:EvolutionStatus }
 export type WhatsAppManager = {
   workspaceId:string
-  list(store:UserStore):Promise<{instances:WhatsAppInstance[];canManage:boolean}>
+  list(store:UserStore,senderPhones?:boolean):Promise<{instances:WhatsAppInstance[];canManage:boolean}>
   create(store:UserStore,label:string,key:string):Promise<WhatsAppInstance>
   action(store:UserStore,id:string,action:'connect'|'restart'|'disconnect'):Promise<{qr:string|null;expiresAt:string|null}>
 }
@@ -31,8 +31,23 @@ export function createWhatsAppManager(config:{url:string;apiKey:string;instanceN
     if(!store.whatsapp)throw new ApiError(503,'Gestión de conexiones no disponible.')
     return store.whatsapp
   }
-  async function describe(id:string,label:string,name:string):Promise<WhatsAppInstance>{
-    return {id,label,instanceName:name,campaignSender:id==='primary',status:await createEvolutionConnection({...config,instanceName:name},{fetch:request}).status()}
+  async function describe(id:string,label:string,name:string,senderPhones=false):Promise<WhatsAppInstance>{
+    const status=await createEvolutionConnection({...config,instanceName:name},{fetch:request}).status()
+    const result:WhatsAppInstance={id,label,instanceName:name,campaignSender:id==='primary',status}
+    if(senderPhones && status.state==='connected'){
+      try {
+        const data=await provider('/instance/fetchInstances?instanceName='+encodeURIComponent(name))
+        if(Array.isArray(data)){
+          for(const row of data){
+            const instance=row?.instance??row
+            if((instance?.name??instance?.instanceName)!==name)continue
+            const number=/^([1-9]\d{6,14})(?::\d+)?@s\.whatsapp\.net$/.exec(instance.ownerJid??instance.owner??'')?.[1]
+            if(number)result.phone=number
+          }
+        }
+      } catch { /* The configured label still identifies the connected line. */ }
+    }
+    return result
   }
   async function ensure(name:string){
     const state=await createEvolutionConnection({...config,instanceName:name},{fetch:request}).status()
@@ -41,11 +56,11 @@ export function createWhatsAppManager(config:{url:string;apiKey:string;instanceN
   }
   return {
     workspaceId:config.workspaceId,
-    async list(store){
+    async list(store,senderPhones=false){
       const registry=guard(store);const rows=await registry.list()
-      const instances=[await describe('primary','Número de campañas',config.instanceName)]
+      const instances=[await describe('primary','Número de campañas',config.instanceName,senderPhones)]
       // Bounded batches avoid flooding Evolution as more sessions are registered.
-      for(let i=0;i<rows.length;i+=3)instances.push(...await Promise.all(rows.slice(i,i+3).map(r=>describe(r.id,r.label,r.instance_name))))
+      for(let i=0;i<rows.length;i+=3)instances.push(...await Promise.all(rows.slice(i,i+3).map(r=>describe(r.id,r.label,r.instance_name,senderPhones))))
       return {instances,canManage:store.membership.role==='admin'}
     },
     async create(store,label,key){

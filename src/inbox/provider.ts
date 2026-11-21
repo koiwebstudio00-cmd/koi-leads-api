@@ -85,6 +85,18 @@ export function createZernioClient(apiKey:string,fetcher:typeof fetch=fetch) {
   return {
     attachment:(lookup:{accountId:string;conversationId:string;messageId:string;index:number})=>get('inbox/conversations/'+encodeURIComponent(lookup.conversationId)+'/messages/'+encodeURIComponent(lookup.messageId)+'/attachments/'+lookup.index,z.object({url:z.url()}),{accountId:lookup.accountId,format:'json'}),
     account, connect,
+    async instagramContact(accountId:string,conversationId:string) {
+      const {data}=await get('inbox/conversations/'+encodeURIComponent(conversationId),z.object({
+        data:z.object({id,accountId:id,platform:z.literal('instagram'),participantId:id,
+          instagramProfile:z.object({username:z.string().nullish()}).nullish()}),
+      }),{accountId})
+      if(data.id!==conversationId || data.accountId!==accountId)throw new ZernioError('profile_mismatch')
+      if(data.instagramProfile?.username)return data.instagramProfile.username
+      const participant=await get('accounts/'+encodeURIComponent(accountId)+'/follow-status/'+encodeURIComponent(data.participantId),
+        z.object({userId:id,accountId:id,username:z.string().nullish()}))
+      if(participant.accountId!==accountId || participant.userId!==data.participantId)throw new ZernioError('profile_mismatch')
+      return participant.username??null
+    },
     conversations:(accountId:string,profileId:string,cursor?:string,updatedSince?:string)=>get('inbox/conversations',z.object({
       data:z.array(conversationSchema),pagination,sync:z.object({nextUpdatedSince:date.nullable()}).optional(),meta:z.object({accountsFailed:z.number().default(0)}).optional(),
     }),{accountId,profileId,limit:'100',cursor,updatedSince,sortOrder:'desc'}),

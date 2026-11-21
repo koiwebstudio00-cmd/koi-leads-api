@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import { once } from 'node:events'
 import { createHmac } from 'node:crypto'
 import assert from 'node:assert/strict'
+import { createZernioClient } from '../src/inbox/provider.ts'
 import { createApp } from '../src/app.ts'
 import { createInboxWebhook } from '../src/inbox/webhook.ts'
 import { readConfig } from '../src/config.ts'
@@ -47,4 +48,20 @@ test('Inbox configuration is opt-in and all-or-none without leaking credentials 
  const secret='never-print-this-api-key'
  assert.throws(()=>readConfig({...base,ZERNIO_API_KEY:secret}),(error:unknown)=>error instanceof Error&&!error.message.includes(secret)&&error.message.includes('ZERNIO_PROFILE_ID'))
  assert.equal(readConfig({...base,ZERNIO_API_KEY:secret,ZERNIO_PROFILE_ID:'profile',KOI_ZERNIO_WORKSPACE_ID:'11111111-1111-4111-8111-111111111111',ZERNIO_WEBHOOK_SECRET:'secret'.repeat(10),KOI_INBOX_GATEWAY_DATABASE_URL:'postgres://synthetic'}).ZERNIO_PROFILE_ID,'profile')
+})
+
+test('resolves an Instagram handle from the actual participant of the scoped conversation',async()=>{
+ let wrong=false
+ const provider=createZernioClient('fixture',async input=>{
+   const url=new URL(String(input))
+   if(url.pathname.endsWith('/inbox/conversations/thread')){
+     assert.equal(url.searchParams.get('accountId'),'account')
+     return Response.json({data:{id:'thread',platform:'instagram',accountId:'account',participantId:'peer'}})
+   }
+   assert.ok(url.pathname.endsWith('/accounts/account/follow-status/peer'))
+   return Response.json({accountId:'account',userId:wrong?'another':'peer',username:'koi.contact'})
+ })
+ assert.equal(await provider.instagramContact('account','thread'),'koi.contact')
+ wrong=true
+ await assert.rejects(provider.instagramContact('account','thread'),e=>(e as {code?:string}).code==='profile_mismatch')
 })

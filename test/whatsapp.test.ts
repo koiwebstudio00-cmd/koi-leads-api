@@ -55,3 +55,20 @@ test('HTTP management authenticates, validates and denies operators before invok
   assert.equal((await fetch(url,{method:'POST',headers,body:JSON.stringify({label:'Comercial'})})).status,201);assert.equal(mutations,1)
  }finally{server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()))}
 })
+
+test('sender picker only exposes the owner phone of matching connected Evolution instances',async()=>{
+ const manager=createWhatsAppManager(config,{fetch:async input=>{
+   const url=new URL(String(input))
+   if(url.pathname.includes('/connectionState/')){
+     const name=url.pathname.split('/').at(-1)
+     return Response.json({instance:{instanceName:name,state:name===config.instanceName?'open':'close'}})
+   }
+   assert.equal(url.searchParams.get('instanceName'),config.instanceName)
+   return Response.json([{name:'other',ownerJid:'5491100000000@s.whatsapp.net'},
+     {name:config.instanceName,ownerJid:'5493815551234:1@s.whatsapp.net',token:'private-fixture'}])
+ }})
+ const {instances}=await manager.list(fixture('operator'),true)
+ assert.equal(instances[0]?.phone,'5493815551234')
+ assert.equal(instances[1]?.phone,undefined)
+ assert.ok(!JSON.stringify(instances).includes('private-fixture'))
+})

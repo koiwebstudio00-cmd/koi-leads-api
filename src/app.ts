@@ -1,3 +1,4 @@
+import type { PushService } from './push.ts'
 import {portalQuery,sensitiveRoute,type SensitiveServices} from './sensitive.ts'
 import { inboxReadRoute,type InboxReadMedia } from './inbox/read.ts'
 import type { InboxService } from './inbox/service.ts'
@@ -39,7 +40,7 @@ async function readBytes(request: IncomingMessage, maxBytes: number) {
   return Buffer.concat(chunks)
 }
 
-export function createApp(options: { sensitive?:SensitiveServices; authorize: Authorize; origin: string; statistics?:StatisticsService; inboxSendEnabled?:boolean; inboxRichEnabled?:boolean; inbox?: InboxService; inboxMedia?:InboxReadMedia; inboxWebhook?: (headers:IncomingHttpHeaders,raw:Buffer)=>Promise<unknown>; whatsapp?: WhatsAppManager; readChatMedia?: ReadChatMedia; relayChatMedia?: RelayChatMedia; syncChatHistory?: SyncChatHistory; evolution?: EvolutionConnection; webhook?: (header: string | string[] | undefined, body: () => Promise<unknown>) => Promise<unknown> }) {
+export function createApp(options: { push?:PushService; sensitive?:SensitiveServices; authorize: Authorize; origin: string; statistics?:StatisticsService; inboxSendEnabled?:boolean; inboxRichEnabled?:boolean; inbox?: InboxService; inboxMedia?:InboxReadMedia; inboxWebhook?: (headers:IncomingHttpHeaders,raw:Buffer)=>Promise<unknown>; whatsapp?: WhatsAppManager; readChatMedia?: ReadChatMedia; relayChatMedia?: RelayChatMedia; syncChatHistory?: SyncChatHistory; evolution?: EvolutionConnection; webhook?: (header: string | string[] | undefined, body: () => Promise<unknown>) => Promise<unknown> }) {
   let uploads = 0
   let activeInboxPosts = 0
   const server = createServer(async (request, response) => {
@@ -76,6 +77,15 @@ export function createApp(options: { sensitive?:SensitiveServices; authorize: Au
       const token = /^Bearer ([^\s]+)$/.exec(request.headers.authorization ?? '')?.[1]
       if (!token) throw new ApiError(401, 'Ingresá para continuar.')
       const store = await options.authorize(token)
+      if (path === '/api/push/config' && request.method === 'GET') {
+        send(200,{publicKey:options.push?.publicKey ?? null});return
+      }
+      const pushAction = /^\/api\/push\/(save|remove|status)$/.exec(path)?.[1]
+      if (request.method === 'POST' && (pushAction === 'save' || pushAction === 'remove' || pushAction === 'status')) {
+        if (!options.push) throw new ApiError(503,'Las notificaciones todavía no están configuradas.')
+        const active=await options.push.device(pushAction,store,await readBody(request,4096))
+        send(200,{active});return
+      }
       if(path.startsWith('/api/secure/')){
         send(200,await sensitiveRoute(path,request.method,store,options.sensitive,()=>readBody(request,1048576)));return
       }

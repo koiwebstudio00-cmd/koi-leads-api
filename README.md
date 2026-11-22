@@ -273,3 +273,24 @@ Código en `dev`. Las cuatro migraciones Inbox están aplicadas en el proyecto K
 ## Inbox publicado — 20/11/2026
 
 API y worker Inbox en Dokploy (`d3e5f0e`), frontend en Vercel (`34efeea`), webhook Zernio activo y envío de texto habilitado con regla de 24 horas. Los procesos locales fueron detenidos; producción no depende de la computadora. Se verificaron recepción técnica firmada, procesamiento remoto, interfaz autenticada y regresión de Conversaciones. El usuario hará después la prueba con mensajes reales. [Versiones, configuración, evidencias y reversión](docs/inbox-produccion.md). Este cierre reemplaza los estados de piloto/despliegue pendiente de las notas históricas anteriores.
+
+## Notificaciones Web Push
+
+La API entrega avisos a los dispositivos que cada miembro habilita en Configuración → Aplicación. El título muestra el contacto y el canal (WP, IG o el nombre de la instancia seguido de « . evo»). El cuerpo muestra hasta 120 caracteres del mensaje, incluidos los tres puntos del recorte. Al tocar el aviso se abre el hilo correspondiente.
+
+Desde las 09:00 de Argentina se revisan los pendientes cada minuto. Los seguimientos comerciales corresponden al responsable del lead o, si está sin asignar, a quien creó el seguimiento. Las tareas de proyecto se comparten con el equipo del espacio. Cada dispositivo recibe un aviso por tarea, fecha local y estado. Un seguimiento con hora puede pasar de «para hoy» a «vencida» el mismo día. Una tarea de proyecto con fecha vence al día siguiente. El toque abre el seguimiento o la entrega.
+
+### Activación
+
+1. Aplicar la migración `web_push_notifications` en el destino. Usar un login PostgreSQL dedicado para la conexión de la API. Concederle los siguientes permisos, reemplazando `koi_push_api` por su nombre real.
+
+   ```sql
+   grant usage on schema koi_private to koi_push_api;
+   grant execute on function koi_private.push_device(text,uuid,uuid,jsonb),
+     koi_private.push_schedule(), koi_private.push_claim(),
+     koi_private.push_finish(uuid,uuid,text) to koi_push_api;
+   ```
+
+2. Generar una pareja VAPID estable en el entorno de secretos con `npx --no-install web-push generate-vapid-keys`. Configurar `KOI_PUSH_DATABASE_URL`, `KOI_PUSH_PUBLIC_KEY`, `KOI_PUSH_PRIVATE_KEY` y `KOI_PUSH_SUBJECT` (por ejemplo, un URI `mailto:` del estudio) en la API. La conexión usa la CA PostgreSQL configurada por `KOI_DATABASE_CA_FILE`. El navegador obtiene la clave pública a través de la API autenticada.
+3. Publicar la API con al menos una réplica activa de forma continua y luego el frontend por HTTPS. La cola persiste en PostgreSQL, con reintentos y descarte de suscripciones vencidas. El proceso de envío corre en las réplicas de la API.
+4. En un dispositivo de prueba, activar el permiso desde Configuración, cerrar la ventana y enviar un mensaje entrante por cada cuenta. Verificar el contacto, el canal, la vista previa del mensaje y el hilo al tocar el aviso. Para tareas, crear una para hoy y otra vencida y verificar sus avisos después de las 09:00. En iOS/iPadOS 16.4 o posterior, abrir Koi Leads desde la pantalla de inicio para activar Web Push.

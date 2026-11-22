@@ -378,3 +378,67 @@ test('vault migration recovers legacy ciphertext, preserves history and rolls ba
    assert.ok(!JSON.stringify(metadata).includes(row.secret_ciphertext))
  }finally{await stage.close()}
 })
+
+test('push queues only live inbound on the subscribed workspace and labels every channel',async()=>{
+ const {seedInbox,inboxFixture}=await import('./inbox-fixture.ts')
+ const {isPushEndpoint}=await import('../src/push.ts')
+ assert.ok(isPushEndpoint('https://web.push.apple.com/Q'))
+ assert.equal(isPushEndpoint('https://example.org/Q'),false)
+ const sub={endpoint:'https://fcm.googleapis.com/fcm/send/test',keys:{auth:'test',p256dh:'test'}}
+ const device=(action:string,w:string,u:string)=>db.query<{ok:boolean}>('select koi_private.push_device($1,$2,$3,$4) ok',[action,w,u,sub])
+ assert.equal((await device('save',workspace,user)).rows[0]!.ok,true)
+ assert.equal((await device('save',foreign,other)).rows[0]!.ok,false)
+ await seedInbox(db,workspace,user)
+ const chat=randomUUID()
+ await db.query("insert into koi_conversations(id,workspace_id,instance,peer,name,lead_id) values($1,$2,'Ventas','5493811111234@s.whatsapp.net','Cliente',$3)",[chat,workspace,first])
+ await db.query("insert into koi_private.chat_messages(workspace_id,conversation_id,instance,direction,body,status,historical) values($1,$2,'Ventas','in','Hola','received',false),($1,$2,'Ventas','in','Viejo','received',true),($1,$2,'Ventas','out','Respuesta','accepted',false)",[workspace,chat])
+ type Job={id:string;lease:string;recipient:string;title:string;body:string;path:string}
+ const claim=()=>db.query<Job>('select * from koi_private.push_claim()')
+ const batch=await claim()
+ assert.deepEqual(batch.rows.map(j=>[j.title,j.body,j.path]).sort(),[
+   ['Ana Inbox · IG','Consulta desde Instagram','/inbox/'+inboxFixture.igChat],
+   ['Cliente · Ventas . evo','Hola','/conversaciones/'+chat],
+   ['Ana Inbox · WP','Consulta desde WhatsApp','/inbox/'+inboxFixture.waChat],
+ ].sort())
+ assert.ok(batch.rows.every(j=>j.recipient===user))
+ assert.equal((await claim()).rows.length,0)
+ await db.query("update koi_private.inbox_messages set historical=false where account_id=$1 and external_id='old-1'",[inboxFixture.ig])
+ assert.equal((await claim()).rows.length,1)
+ await db.query("update koi_private.inbox_messages set historical=false where account_id=$1 and external_id='old-1'",[inboxFixture.ig])
+ assert.equal((await claim()).rows.length,0)
+ const full='🐟'.repeat(120)
+ for(const [input,expected] of [[full,full],[full+'x','🐟'.repeat(117)+'...'],['  Una\n consulta  ','Una consulta'],['','Adjunto']]){
+   await db.query(`insert into koi_private.chat_messages(workspace_id,conversation_id,instance,direction,body,status,attachment_name)
+    values($1,$2,'Ventas','in',$3,'received','foto.jpg')`,[workspace,chat,input])
+   assert.equal((await claim()).rows[0]!.body,expected)
+ }
+ const job=batch.rows[0]!
+ await db.query("select koi_private.push_finish($1,$2,'retry')",[job.id,job.lease])
+ await db.query("update koi_private.push_jobs set available_at=now() where id=$1",[job.id])
+ const retry=(await claim()).rows[0]!
+ assert.notEqual(retry.lease,job.lease)
+ await db.query("select koi_private.push_finish($1,$2,'expired')",[job.id,job.lease])
+ assert.ok((await device('status',workspace,user)).rows[0]!.ok)
+ await db.query("select koi_private.push_finish($1,$2,'expired')",[job.id,retry.lease])
+ assert.equal((await device('status',workspace,user)).rows[0]!.ok,false)
+ await assert.rejects(asUser(user,()=>db.query('select * from koi_private.push_claim()')),/permission denied/)
+})
+
+test('push reminders distinguish the local date, deadline, completion and ownership',async()=>{
+ const id=randomUUID(),project=randomUUID(),task=randomUUID()
+ await db.query("insert into koi_private.studio_projects(workspace_id,id,name,type,ownership,status) values($1,$2,'Push','App','studio','active')",[workspace,project])
+ await db.query("insert into koi_private.delivery_items(workspace_id,id,kind,title,status,project_id,due_date,author) values($1,$2,'task','Entrega','todo',$3,'2040-04-02',$4)",[workspace,task,project,user])
+ await db.query("insert into koi_followups(workspace_id,id,lead_id,title,due_at,created_by,request_id) values($1,$2,$3,'Llamar','2040-04-02 15:00:00+00',$4,gen_random_uuid())",[workspace,id,first,user])
+ const paths=['/seguimientos?task='+id,'/entregas/'+task]
+ async function due(at:string){return (await db.query<{path:string;title:string;recipient:string|null}>('select * from koi_private.push_due($1) where path=any($2::text[]) order by path desc',[at,paths])).rows}
+ assert.equal((await due('2040-04-02 11:59Z')).length,0)
+ const morning=await due('2040-04-02 12:00Z')
+ assert.deepEqual(morning.map(x=>x.title),['Tarea para hoy','Tarea para hoy'])
+ assert.ok(morning[0]!.recipient);assert.equal(morning[1]!.recipient,null)
+ assert.deepEqual((await due('2040-04-02 15:01Z')).map(x=>x.title),['Tarea vencida','Tarea para hoy'])
+ assert.deepEqual((await due('2040-04-03 12:00Z')).map(x=>x.title),['Tarea vencida','Tarea vencida'])
+ await db.query("update koi_followups set status='completed' where id=$1",[id])
+ await db.query("update koi_private.delivery_items set status='done' where id=$1",[task])
+ assert.equal((await due('2040-04-03 12:00Z')).length,0)
+ await db.query('select koi_private.push_schedule()')
+})

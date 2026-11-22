@@ -10,3 +10,5 @@ supabase/.temp/
 supabase/.branches/
 
 .local-campaigns/
+
+.local-backoffice/

@@ -1,3 +1,4 @@
+import {portalQuery,sensitiveRoute,type SensitiveServices} from './sensitive.ts'
 import { inboxReadRoute,type InboxReadMedia } from './inbox/read.ts'
 import type { InboxService } from './inbox/service.ts'
 import type { IncomingHttpHeaders } from 'node:http'
@@ -38,7 +39,7 @@ async function readBytes(request: IncomingMessage, maxBytes: number) {
   return Buffer.concat(chunks)
 }
 
-export function createApp(options: { authorize: Authorize; origin: string; statistics?:StatisticsService; inboxSendEnabled?:boolean; inboxRichEnabled?:boolean; inbox?: InboxService; inboxMedia?:InboxReadMedia; inboxWebhook?: (headers:IncomingHttpHeaders,raw:Buffer)=>Promise<unknown>; whatsapp?: WhatsAppManager; readChatMedia?: ReadChatMedia; relayChatMedia?: RelayChatMedia; syncChatHistory?: SyncChatHistory; evolution?: EvolutionConnection; webhook?: (header: string | string[] | undefined, body: () => Promise<unknown>) => Promise<unknown> }) {
+export function createApp(options: { sensitive?:SensitiveServices; authorize: Authorize; origin: string; statistics?:StatisticsService; inboxSendEnabled?:boolean; inboxRichEnabled?:boolean; inbox?: InboxService; inboxMedia?:InboxReadMedia; inboxWebhook?: (headers:IncomingHttpHeaders,raw:Buffer)=>Promise<unknown>; whatsapp?: WhatsAppManager; readChatMedia?: ReadChatMedia; relayChatMedia?: RelayChatMedia; syncChatHistory?: SyncChatHistory; evolution?: EvolutionConnection; webhook?: (header: string | string[] | undefined, body: () => Promise<unknown>) => Promise<unknown> }) {
   let uploads = 0
   let activeInboxPosts = 0
   const server = createServer(async (request, response) => {
@@ -68,9 +69,16 @@ export function createApp(options: { authorize: Authorize; origin: string; stati
         if(!options.inboxWebhook)throw new ApiError(503,'Webhook Inbox no configurado.')
         send(200,await options.inboxWebhook(request.headers,await readBytes(request,1048576)));return
       }
+      if(path==='/api/public/portal'&&request.method==='POST'){
+        if(!options.sensitive)throw new ApiError(503,'Portal no disponible.')
+        send(200,await options.sensitive.publicRead(portalQuery.parse(await readBody(request))));return
+      }
       const token = /^Bearer ([^\s]+)$/.exec(request.headers.authorization ?? '')?.[1]
       if (!token) throw new ApiError(401, 'Ingresá para continuar.')
       const store = await options.authorize(token)
+      if(path.startsWith('/api/secure/')){
+        send(200,await sensitiveRoute(path,request.method,store,options.sensitive,()=>readBody(request,1048576)));return
+      }
       if(path==='/api/inbox/connections'||path.startsWith('/api/inbox/connections/')||/^\/api\/inbox\/conversations\/[^/]+\/instagram-profile$/.test(path)){
         if(!options.inbox){
           if(path==='/api/inbox/connections'&&request.method==='GET'){send(200,{configured:false,accounts:[],failedEvents:0});return}
@@ -122,7 +130,7 @@ export function createApp(options: { authorize: Authorize; origin: string; stati
       }
       if (path.startsWith('/api/crm/')) {
         if (!store.crm) throw new ApiError(503, 'CRM no disponible.')
-        const result = await crmRoute(request, url, store.crm, () => readBody(request, 524288)); send(result.status, result.data); return
+        const result = await crmRoute(request, url, store.crm, () => readBody(request, path==='/api/crm/delivery/files' ? 7000000 : 524288)); send(result.status, result.data); return
       }
       if (path === '/api/campaigns' || path.startsWith('/api/campaigns/')) {
         if (!store.campaigns) throw new ApiError(503, 'Campañas no disponibles.')

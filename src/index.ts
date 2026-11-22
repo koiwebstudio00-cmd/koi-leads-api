@@ -1,3 +1,5 @@
+import {sensitiveServices} from './sensitive.ts'
+import {readVaultKeys} from './vault-crypto.ts'
 import { createInboxReadMedia } from './inbox/media.ts'
 import { createInboxMachine } from './inbox/machine.ts'
 import { createZernioClient } from './inbox/provider.ts'
@@ -44,7 +46,8 @@ const statistics = inboxMachine && config.ZERNIO_API_KEY && config.ZERNIO_PROFIL
       instagram:createInstagramStatistics(config.ZERNIO_API_KEY),
     })
   : undefined
-const server = createApp({ statistics, inboxRichEnabled:config.KOI_INBOX_RICH_ENABLED==='true',inboxSendEnabled:config.KOI_INBOX_SEND_ENABLED==='true',inbox,inboxWebhook,inboxMedia, origin: config.KOI_APP_ORIGIN, authorize: createAuthorizer(config.KOI_SUPABASE_URL, config.KOI_SUPABASE_PUBLISHABLE_KEY), evolution, webhook, whatsapp, readChatMedia: chatProvider?.read, relayChatMedia: config.KOI_RELAY_CHAT_MEDIA === 'true' ? createChatMediaRelay() : undefined, syncChatHistory })
+const sensitive=sensitiveServices(config.KOI_SUPABASE_URL,config.KOI_SUPABASE_PUBLISHABLE_KEY,readVaultKeys(process.env.KOI_VAULT_KEYS,process.env.KOI_VAULT_KEY_VERSION))
+const server = createApp({ sensitive, statistics, inboxRichEnabled:config.KOI_INBOX_RICH_ENABLED==='true',inboxSendEnabled:config.KOI_INBOX_SEND_ENABLED==='true',inbox,inboxWebhook,inboxMedia, origin: config.KOI_APP_ORIGIN, authorize: createAuthorizer(config.KOI_SUPABASE_URL, config.KOI_SUPABASE_PUBLISHABLE_KEY), evolution, webhook, whatsapp, readChatMedia: chatProvider?.read, relayChatMedia: config.KOI_RELAY_CHAT_MEDIA === 'true' ? createChatMediaRelay() : undefined, syncChatHistory })
 server.listen(config.PORT, '0.0.0.0', () => console.log(`Koi API listening on ${config.PORT}`))
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {

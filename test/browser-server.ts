@@ -1,5 +1,6 @@
 // Servidor exclusivo de pruebas: API/parser reales, PostgreSQL embebido y Auth sintética.
 // Nunca se importa desde src/index.ts ni lee credenciales del entorno.
+import { randomBytes } from 'node:crypto'
 import { seedInbox } from './inbox-fixture.ts'
 import {createInboxReactionCycle} from '../src/inbox/reactions.ts'
 import type {InboxTextSender} from '../src/inbox/send-provider.ts'
@@ -27,6 +28,7 @@ await db.exec(`create role anon; create role authenticated; create schema auth; 
 const directory = new URL('../supabase/migrations/',import.meta.url)
 for (const file of (await readdir(directory)).filter(file => file.endsWith('.sql')).sort()) await db.exec(await readFile(new URL(file,directory),'utf8'))
 await db.exec(`insert into public.koi_workspaces(id,name) values('${workspace}','Estudio Koi'); insert into public.koi_workspace_members values('${workspace}','${user}','admin',now())`)
+await db.query("insert into koi_private.finance_owners(workspace_id,user_id,source,source_owner_id) values($1,$2,'browser-fixture',$2)",[workspace,user])
 await seedInbox(db,workspace,user)
 const igFixture = 'b1000000-0000-4000-8000-000000000002'
 await db.query("update koi_private.inbox_messages set provider_attachments=provider_attachments || $2::jsonb where conversation_id=$1 and external_id='live'", [
@@ -82,6 +84,12 @@ const store:UserStore = {
     catch (error) { chatError(error as {code?:string;message?:string}) }
   }),
   crm:(action,data) => query(async tx => {
+    if (action.startsWith('delivery:')) return (await tx.query<{result:unknown}>('select koi_delivery_command($1,$2) as result',[action.slice(9),JSON.stringify(data)])).rows[0]!.result
+    if (action.startsWith('sensitive:')) return (await tx.query<{result:unknown}>('select koi_sensitive_command($1,$2) as result',[action.slice(10),JSON.stringify(data)])).rows[0]!.result
+    if (action.startsWith('finance:')) return (await tx.query<{result:unknown}>('select koi_finance_command($1,$2) as result',[action.slice(8),JSON.stringify(data)])).rows[0]!.result
+    if (action.startsWith('client:')) return (await tx.query<{result:unknown}>('select koi_client_command($1,$2) as result',[action.slice(7),JSON.stringify(data)])).rows[0]!.result
+    if (action.startsWith('project:')) return (await tx.query<{result:unknown}>('select koi_project_command($1,$2) as result',[action.slice(8),JSON.stringify(data)])).rows[0]!.result
+    if (action.startsWith('chat:')) return (await tx.query<{result:unknown}>('select koi_crm_chat_read($1,$2) as result',[action.slice(5),JSON.stringify(data)])).rows[0]!.result
     if (action === 'stats') {
       return (await tx.query<{result:unknown}>('select koi_stats_command($1) as result',[JSON.stringify(data)])).rows[0]!.result
     }
@@ -130,6 +138,15 @@ const store:UserStore = {
   },
 }
 const server = createApp({
+  sensitive:{
+    keys:{active:1,keys:new Map([[1,randomBytes(32)]])},
+    revalidate:async (_,password)=>password==='fixture-proof',
+    publicRead:async({token,fileId})=>db.transaction(async tx=>{
+      await tx.exec('set local role anon')
+      try{return (await tx.query<{value:unknown}>('select koi_read_client_portal($1,$2) as value',[token,fileId??null])).rows[0]!.value}
+      catch{throw new ApiError(404,'Enlace no disponible.')}
+    }),
+  },
   statistics: async (request, url, actor) => {
     if (actor.membership.workspace_id !== workspace) throw new ApiError(403,'Sin permiso.')
     if (request.method !== 'GET') throw new ApiError(405,'Solo lectura en esta prueba.')

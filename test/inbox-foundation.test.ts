@@ -145,3 +145,53 @@ test('outbox keeps request idempotency, account scope and one unresolved dispatc
   await db.query("update koi_private.inbox_outbox set status='accepted' where message_id=$1",[ids[0]])
   await db.query("update koi_private.inbox_outbox set status='leased',lease_token=$1,lease_until=now()+interval '1 minute' where message_id=$2",[randomUUID(),ids[1]])
 })
+
+test('CRM incoming deduplicates threads, includes synchronized history and scopes accounts and totals', async()=>{
+  const read=async(actor:string,action:string,p:Record<string,unknown>={})=>
+    (await asUser(actor,'select public.koi_crm_chat_read($1,$2) as value',[action,JSON.stringify(p)])).rows[0]!.value
+  const before=await read(operator,'accounts') as {id:string}[]
+  assert.ok(before.some(a=>a.id==='evolution:primary'))
+  assert.ok(!before.some(a=>a.id==='zernio:'+foreignAccount))
+  const evo=randomUUID()
+  await db.query("insert into koi_conversations(id,workspace_id,instance,peer,lead_id) values ($1,$2,'test','549388888888@s.whatsapp.net',$3)",[evo,w,lead])
+  await db.query("insert into koi_private.chat_messages(workspace_id,instance,conversation_id,direction,historical,status,sent_at) values ($1,'test',$2,'in',true,'received','2026-01-01')",[w,evo])
+  await db.query("insert into koi_private.inbox_messages(workspace_id,account_id,conversation_id,direction,status,historical,sent_at) values ($1,$2,$3,'in','received',true,'2029-01-01')",[w,account,conversation])
+  const page=await read(operator,'list',{listId:list}) as {total:number;leads:{incoming:{id:string};phone:string|null}[]}
+  assert.equal(page.total,1)
+  assert.equal(page.leads[0]!.phone,null)
+  assert.equal(page.leads[0]!.incoming.id,conversation)
+  const board=await read(operator,'board',{account:'evolution:primary'}) as {columns:{total:number;leads:{incoming:{id:string}}[]}[]}
+  assert.equal(board.columns.reduce((n,c)=>n+c.total,0),1)
+  assert.equal(board.columns.flatMap(c=>c.leads)[0]!.incoming.id,evo)
+  assert.equal((await read(operator,'list',{channel:'instagram',account:'evolution:primary'}) as {total:number}).total,0)
+  assert.equal((await read(operator,'list',{page:2}) as {leads:unknown[]}).leads.length,0)
+  assert.ok((await read(operator,'threads',{id:lead}) as {id:string}[]).some(t=>t.id===secondConversation))
+  assert.equal((await read(outsider,'list') as {total:number}).total,0)
+  await rejectsCode(read(outsider,'threads',{id:lead}),'PT404')
+})
+
+test('Entrantes filters before pagination and preserves original source, stage and owner',async()=>{
+  const evoPeers=await db.query<{id:string}>(`insert into koi_leads(workspace_id,name,created_by,assigned_to,source,stage)
+    select $1,'Página '||n,$2,$2,'Importación','proposal' from generate_series(1,32) n returning id`,[w,operator])
+  for(const [index,person] of evoPeers.rows.entries()){
+    const thread=await db.query<{id:string}>(`insert into koi_conversations(workspace_id,instance,peer,lead_id)
+      values ($1,'test',$2,$3) returning id`,[w,(5493800000000+index)+'@s.whatsapp.net',person.id])
+    const outgoingOnly=index===31
+    await db.query(`insert into koi_private.chat_messages(workspace_id,instance,conversation_id,direction,status,sent_at)
+      values ($1,'test',$2,$3,$4,'2025-01-01'::timestamptz + $5 * interval '1 minute')`,
+      [w,thread.rows[0]!.id,outgoingOnly?'out':'in',outgoingOnly?'accepted':'received',index])
+  }
+  const read=async(action:string,query:Record<string,unknown>)=>
+    (await asUser(operator,'select koi_crm_chat_read($1,$2) as value',[action,JSON.stringify({account:'evolution:primary',assignedTo:operator,stage:'proposal',...query})])).rows[0]!.value
+  type Page={total:number;leads:{id:string;source:string}[]}
+  const first=await read('list',{}) as Page
+  const second=await read('list',{page:2}) as Page
+  assert.equal(first.total,31)
+  assert.equal(first.leads.length,30)
+  assert.equal(first.leads[0]?.id,evoPeers.rows[30]?.id)
+  assert.equal(first.leads[0]?.source,'Importación')
+  assert.equal(second.leads[0]?.id,evoPeers.rows[0]?.id)
+  const board=await read('board',{}) as {columns:(Page&{stage:string})[]}
+  assert.deepEqual(board.columns.find(c=>c.stage==='proposal')?.leads,first.leads)
+  assert.equal(board.columns.reduce((sum,c)=>sum+c.total,0),31)
+})

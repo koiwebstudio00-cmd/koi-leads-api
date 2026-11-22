@@ -2,6 +2,10 @@ import type { IncomingMessage } from 'node:http'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import { leadInput, phoneInput } from './lead-input.ts'
+import { financeRoute } from './finance.ts'
+import { deliveryRoute } from './delivery.ts'
+import { clientRoute } from './clients.ts'
+import { projectRoute } from './projects.ts'
 import { ApiError } from './store.ts'
 
 export type CrmCommand = (action: string, data: Record<string, unknown>) => Promise<unknown>
@@ -16,6 +20,11 @@ const filters = z.object({
   assignedTo:z.union([z.uuid(),z.literal(''),z.literal('unassigned')]).default(''),
   page:z.coerce.number().int().min(1).max(100000).default(1),
 }).strict()
+const incomingFilters = filters.extend({
+  view:z.literal('incoming'),
+  channel:z.enum(['whatsapp','instagram']).optional(),
+  account:z.string().regex(/^(?:evolution:primary|(?:evolution|zernio):[0-9a-f-]{36})$/i).optional(),
+})
 const statsFilter = z.object({ from: z.iso.datetime({offset:true}), to: z.iso.datetime({offset:true}) }).strict().refine(value => Date.parse(value.to) > Date.parse(value.from), 'El periodo no es válido.')
 export const crmUpdate = z.object({
   product:product.optional(), revision:z.number().int().nonnegative(), stage:stageSchema.optional(),
@@ -34,6 +43,58 @@ export function crmError(error:{code?:string}|null) {
 }
 export function createCrmStore(client:SupabaseClient):CrmCommand {
   return async(action,data)=>{
+    if(action.startsWith('sensitive:')){
+      const result=await client.rpc('koi_sensitive_command',{action:action.slice(10),p:data})
+      const code=result.error?.code
+      if(code==='42501')throw new ApiError(403,'Acceso restringido.')
+      if(code==='PT404')throw new ApiError(404,'No encontramos ese elemento.')
+      if(code==='PT409')throw new ApiError(409,'El registro cambió. Actualizá la ficha.')
+      if(result.error&&['22023','23514','23503','23505'].includes(code??''))throw new ApiError(422,'Revisá el contexto y la selección.')
+      if(result.error)throw new ApiError(503,'No pudimos completar la operación.')
+      return result.data
+    }
+    if(action.startsWith('finance:')){
+      const result=await client.rpc('koi_finance_command',{action:action.slice(8),p:data})
+      const code=result.error?.code
+      if(code==='42501')throw new ApiError(403,'Acceso financiero restringido.')
+      if(code==='PT409'||code==='23505')throw new ApiError(409,'El registro cambió. Actualizá Finanzas.')
+      if(result.error&&['23514','23503','23502','22023','22003','22008'].includes(code??''))throw new ApiError(422,'Revisá el importe, las fechas y las asociaciones.')
+      if(result.error)throw new ApiError(503,'No pudimos consultar Finanzas.')
+      return result.data
+    }
+    if(action.startsWith('delivery:')){
+      const result=await client.rpc('koi_delivery_command',{action:action.slice(9),p:data})
+      const code=result.error?.code
+      if(code==='PT409')throw new ApiError(409,'El elemento cambió. Actualizá la ficha.')
+      if(code==='PT404')throw new ApiError(404,'No encontramos el elemento en este contexto.')
+      if(code==='42501')throw new ApiError(403,'No tenés acceso al espacio.')
+      if(result.error && ['23514','23503','23502','22023','22007','22008','23505'].includes(code??''))throw new ApiError(422,'Revisá el estado, las fechas y los proyectos del cliente.')
+      if(result.error)throw new ApiError(503,'No pudimos consultar las entregas.')
+      return result.data
+    }
+    if(action.startsWith('client:')){
+      const result=await client.rpc('koi_client_command',{action:action.slice(7),p:data})
+      if(result.error?.code==='PT409')throw new ApiError(409,'El cliente o la conversión cambió. Volvé a abrir la ficha.')
+      crmError(result.error)
+      return result.data
+    }
+    if (action.startsWith('project:')) {
+      const result=await client.rpc('koi_project_command',{action:action.slice(8),p:data})
+      if(result.error) {
+        const code=result.error.code
+        if(code==='PT409'||code==='23505')throw new ApiError(409,'El proyecto o su asociación cambió. Actualizá la ficha.')
+        if(code==='PT404')throw new ApiError(404,'No encontramos ese proyecto o lead.')
+        if(code==='42501')throw new ApiError(403,'No tenés acceso a este espacio.')
+        if(['22023','23514','23503','23502','22008'].includes(code))throw new ApiError(422,'Revisá las fechas, los datos y el responsable.')
+        throw new ApiError(503,'No pudimos consultar los proyectos.')
+      }
+      return result.data
+    }
+    if (action.startsWith('chat:')) {
+      const result = await client.rpc('koi_crm_chat_read',{action:action.slice(5),p:data})
+      crmError(result.error)
+      return result.data
+    }
     if (action === 'campaign_recipients') {
       const result = await client.rpc('koi_campaign_recipient_picker', {
         p_list: data.listId, p_search: data.search, p_province: data.province,
@@ -54,6 +115,10 @@ export function createCrmStore(client:SupabaseClient):CrmCommand {
 }
 export async function crmRoute(request:IncomingMessage,url:URL,command:CrmCommand,readBody:()=>Promise<unknown>) {
   const path=url.pathname.replace('/api/crm','')
+  if(path==='/finance'||path.startsWith('/finance/'))return financeRoute(request,path,url,command,readBody)
+  if(path==='/delivery'||path.startsWith('/delivery/'))return deliveryRoute(request,path,url,command,readBody)
+  if (/^\/clients(?:\/|$)|^\/(?:leads\/[^/]+\/client|projects\/[^/]+\/clients)$/.test(path)) return clientRoute(request,path,command,readBody)
+  if (/^\/(projects(?:\/|$)|leads\/[^/]+\/projects(?:\/|$))/.test(path)) return projectRoute(request,path,url,command,readBody)
   if (path === '/campaign-recipients' && request.method === 'GET') {
     const query = z.object({
       listId: z.uuid(),
@@ -66,6 +131,15 @@ export async function crmRoute(request:IncomingMessage,url:URL,command:CrmComman
     }).strict().parse(Object.fromEntries(url.searchParams))
     return { status: 200, data: await command('campaign_recipients', query) }
   }
+  if (request.method==='GET') {
+    if (path==='/chat-accounts') return {status:200,data:await command('chat:accounts',{})}
+    const threads=/^\/leads\/([^/]+)\/threads$/.exec(path)
+    if (threads) return {status:200,data:await command('chat:threads',{id:z.uuid().parse(threads[1])})}
+    if ((path==='/leads'||path==='/board') && url.searchParams.has('view')) {
+      const query=incomingFilters.parse(Object.fromEntries(url.searchParams))
+      return {status:200,data:await command(path==='/leads'?'chat:list':'chat:board',query)}
+    }
+  }
   const messageFields=z.object({title:z.string().trim().min(1).max(120),category:z.string().trim().min(1).max(40),body:z.string().trim().min(1).max(4000)}).strict()
   if(path==='/messages'&&request.method==='GET')return {status:200,data:await command('messages',z.object({search:z.string().trim().max(100).default(''),category:z.string().max(40).default(''),archived:z.enum(['true','false']).default('false').transform(v=>v==='true'),page:z.coerce.number().int().min(1).max(100000).default(1)}).strict().parse(Object.fromEntries(url.searchParams)))}
   if(path==='/messages'&&request.method==='POST')return {status:201,data:await command('message_create',{...messageFields.parse(await readBody()),key:z.uuid().parse(request.headers['idempotency-key'])})}
@@ -74,6 +148,7 @@ export async function crmRoute(request:IncomingMessage,url:URL,command:CrmComman
   if(path==='/tasks'&&request.method==='GET')return {status:200,data:await command('tasks',z.object({view:z.enum(['pending','today','overdue','completed']).default('pending'),owner:z.enum(['all','mine','unassigned']).default('all'),leadId:z.uuid().optional(),search:z.string().trim().max(100).default(''),page:z.coerce.number().int().min(1).max(100000).default(1)}).strict().parse(Object.fromEntries(url.searchParams)))}
   if(path==='/tasks'&&request.method==='POST')return {status:201,data:await command('task_create',{...z.object({leadId:z.uuid(),title:z.string().trim().min(1).max(500),dueAt:z.iso.datetime({offset:true}).nullable()}).strict().parse(await readBody()),key:z.uuid().parse(request.headers['idempotency-key'])})}
   const task=/^\/tasks\/([^/]+)$/.exec(path)
+  if(task&&request.method==='GET')return {status:200,data:await command('delivery:followup',{id:z.uuid().parse(task[1])})}
   if(task&&request.method==='PATCH')return {status:200,data:await command('task_update',{id:z.uuid().parse(task[1]),...z.object({revision:z.number().int().nonnegative(),title:z.string().trim().min(1).max(500).optional(),dueAt:z.iso.datetime({offset:true}).nullable().optional(),status:z.enum(['pending','completed']).optional()}).strict().refine(v=>Object.keys(v).length>1).parse(await readBody())})}
   if(request.method==='GET'&&path==='/stats')return {status:200,data:await command('stats',statsFilter.parse(Object.fromEntries(url.searchParams)))}
   if(request.method==='GET'&&['/leads','/board','/options','/summary'].includes(path))return {status:200,data:await command(path==='/leads'?'list':path.slice(1),filters.parse(Object.fromEntries(url.searchParams)))}

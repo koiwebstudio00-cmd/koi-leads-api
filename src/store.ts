@@ -24,6 +24,7 @@ export type UserStore = {
   whatsapp?: WhatsAppStore
   campaigns?: CampaignCommand
   imports: ImportStore
+  email?: string
   userId: string
   membership: Membership
   list: (page: number, search: string) => Promise<ListPage>
@@ -70,6 +71,7 @@ export function createAuthorizer(url: string, publishableKey: string): Authorize
       whatsapp: createWhatsAppStore(client, membership.workspace_id),
       campaigns: createCampaignStore(client),
       imports: createImportStore(client, membership.workspace_id, auth.user.id, databaseError),
+      email: auth.user.email,
       userId: auth.user.id,
       membership,
       async list(page, search) {

@@ -89,7 +89,8 @@ export function createApp(options: { push?:PushService; sensitive?:SensitiveServ
       if(path.startsWith('/api/secure/')){
         send(200,await sensitiveRoute(path,request.method,store,options.sensitive,()=>readBody(request,1048576)));return
       }
-      if(path==='/api/inbox/connections'||path.startsWith('/api/inbox/connections/')||/^\/api\/inbox\/conversations\/[^/]+\/instagram-profile$/.test(path)){
+      if(path==='/api/inbox/connections'||path.startsWith('/api/inbox/connections/')||/^\/api\/inbox\/conversations\/[^/]+\/(?:instagram-profile|templates)$/.test(path)){
+        if(path.endsWith('/templates') && !options.inboxSendEnabled)throw new ApiError(503,'El envío de Inbox todavía no está habilitado.')
         if(!options.inbox){
           if(path==='/api/inbox/connections'&&request.method==='GET'){send(200,{configured:false,accounts:[],failedEvents:0});return}
           throw new ApiError(503,'Conexión Zernio no configurada.')

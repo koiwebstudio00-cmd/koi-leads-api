@@ -1,7 +1,9 @@
 // Servidor exclusivo de pruebas: API/parser reales, PostgreSQL embebido y Auth sintética.
 // Nunca se importa desde src/index.ts ni lee credenciales del entorno.
 import { randomBytes } from 'node:crypto'
-import { seedInbox } from './inbox-fixture.ts'
+import {createInboxService} from '../src/inbox/service.ts'
+import {followupTemplates} from '../src/inbox/templates.ts'
+import { seedInbox, inboxFixture } from './inbox-fixture.ts'
 import {createInboxReactionCycle} from '../src/inbox/reactions.ts'
 import type {InboxTextSender} from '../src/inbox/send-provider.ts'
 import {createInboxSendCycle} from '../src/inbox/send-cycle.ts'
@@ -30,6 +32,9 @@ for (const file of (await readdir(directory)).filter(file => file.endsWith('.sql
 await db.exec(`insert into public.koi_workspaces(id,name) values('${workspace}','Estudio Koi'); insert into public.koi_workspace_members values('${workspace}','${user}','admin',now())`)
 await db.query("insert into koi_private.finance_owners(workspace_id,user_id,source,source_owner_id) values($1,$2,'browser-fixture',$2)",[workspace,user])
 await seedInbox(db,workspace,user)
+await db.exec("alter table auth.users add column raw_user_meta_data jsonb; update auth.users set raw_user_meta_data='{\"full_name\":\"Tomy\"}'")
+await db.query("insert into koi_private.inbox_history_context values ($1,$2,$3,$4)",[workspace,inboxFixture.wa,inboxFixture.waChat,
+  JSON.stringify({adAttribution:{adId:'fixture-ad',name:'Anuncio de talleres',campaignName:'Noviembre'}})])
 const igFixture = 'b1000000-0000-4000-8000-000000000002'
 await db.query("update koi_private.inbox_messages set provider_attachments=provider_attachments || $2::jsonb where conversation_id=$1 and external_id='live'", [
   igFixture, JSON.stringify([{type:'video',originalType:'ig_reel',sourceUrl:'https://www.instagram.com/reel/Studio_123/?igsh=private-fixture'}]),
@@ -39,8 +44,18 @@ await db.query(`insert into koi_private.inbox_messages(workspace_id,account_id,c
   from koi_private.inbox_messages cross join generate_series(1,2) n where conversation_id=$1 and external_id='live'`,[igFixture])
 await db.query("update koi_private.inbox_messages set provider_attachments=provider_attachments || $1::jsonb where external_id='live'",[JSON.stringify([{type:'audio',mimeType:'audio/wav',filename:'tono.wav'},{type:'sticker',mimeType:'image/webp',filename:'sticker.webp'}])])
 await db.query("insert into koi_private.inbox_bindings values(session_user,$1,'browser-profile',$2,'ingest')",[workspace,user])
+function gateway(rpc:'inbox_command'|'inbox_followup_template'):MachineCommand {
+  return async<T>(action:string,data:Record<string,unknown>)=>db.transaction(async tx=>{
+    await tx.exec("update koi_private.inbox_bindings set kind='gateway' where role_name=session_user; set local role koi_inbox_gateway")
+    const result=await tx.query<{result:T}>(`select koi_private.${rpc}($1,$2) result`,[action,JSON.stringify(data)])
+    await tx.exec("reset role; update koi_private.inbox_bindings set kind='ingest' where role_name=session_user")
+    return result.rows[0]!.result
+  })
+}
 const dispatch:MachineCommand=async<T>(action:string,data:Record<string,unknown>)=>(await db.query<{result:T}>('select koi_private.inbox_dispatch($1,$2) result',[action,JSON.stringify(data)])).rows[0]!.result
-const browserProvider={account:async(id:string)=>({_id:id,profileId:'browser-profile',platform:id==='fixture-wa'?'whatsapp':'instagram',isActive:true})} as unknown as ZernioClient
+const browserProvider={approvedTemplates:async()=>followupTemplates({templates:[{
+  name:'seguimiento',language:'es_AR',status:'APPROVED',components:[{type:'BODY',text:'Hola {{1}}, ¿pudiste ver la propuesta?'}],
+}]}),account:async(id:string)=>({_id:id,profileId:'browser-profile',platform:id==='fixture-wa'?'whatsapp':'instagram',isActive:true})} as unknown as ZernioClient
 const fixtureSend:InboxTextSender = async input=>input.text==='fixture-unknown'?{outcome:'unknown',reason:'provider_timeout'}:{outcome:'accepted',externalId:'fixture-'+input.requestId}
 fixtureSend.upload=async()=> 'https://fixture.invalid/upload'
 const binding={profileId:'browser-profile',workspaceId:workspace,richEnabled:true}
@@ -170,6 +185,8 @@ const server = createApp({
     }
     throw new ApiError(404,'Reporte de prueba desconocido.')
   },
+  inbox:createInboxService({workspaceId:workspace,profileId:'browser-profile',origin:'http://127.0.0.1:4179',
+    command:gateway('inbox_command'),templates:gateway('inbox_followup_template'),provider:browserProvider}),
   inboxRichEnabled:true,inboxSendEnabled:true,
   inboxMedia:async lookup=>{
     const samples=[

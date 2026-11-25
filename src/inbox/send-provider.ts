@@ -1,22 +1,24 @@
+import type { prepareTemplate } from './templates.ts'
 import { z } from 'zod'
 import type { InboxOutboundFile } from './outbound-media.ts'
 import { uploadInboxAttachment } from './outbound-upload.ts'
 export type ReadyMedia = { url: string; name: string; mime: string; voiceNote?: boolean }
 export type SendInput = {
- accountId: string; conversationId: string; text: string; requestId: string; expiresAt: string
- media?: ReadyMedia; humanAgent?: boolean; replyTo?: string | null; sticker?: 'like_heart' | null
+ accountId: string; conversationId: string; text?: string; requestId: string; expiresAt?: string
+ template?: ReturnType<typeof prepareTemplate>['template']; media?: ReadyMedia; humanAgent?: boolean; replyTo?: string | null; sticker?: 'like_heart' | null
 }
 export type SendResult={outcome:'accepted';externalId:string}|{outcome:'failed'|'unknown'|'queued';reason:string;retryAfter?:number}
 const accepted=z.object({success:z.literal(true),data:z.object({messageId:z.string().min(1).max(200)})})
 export function createInboxTextSender(apiKey:string,fetcher:typeof fetch=fetch){
  const send = async(input:SendInput):Promise<SendResult>=>{
-  if(!Number.isFinite(Date.parse(input.expiresAt))||Date.now()>=Date.parse(input.expiresAt))return {outcome:'failed',reason:'expired'}
+  if(!input.template && (!input.expiresAt || !Number.isFinite(Date.parse(input.expiresAt))||Date.now()>=Date.parse(input.expiresAt)))return {outcome:'failed',reason:'expired'}
   let response:Response
   try{response=await fetcher('https://zernio.com/api/v1/inbox/conversations/'+encodeURIComponent(input.conversationId)+'/messages',{
    method:'POST',headers:{Authorization:'Bearer '+apiKey,'Content-Type':'application/json','Idempotency-Key':input.requestId},
    body:JSON.stringify({
     accountId:input.accountId,
-    ...(input.text && !input.sticker ? {message:input.text} : {}),
+    ...(input.template ? {template:{elements:[input.template]}} : {}),
+    ...(input.text && !input.template && !input.sticker ? {message:input.text} : {}),
     ...(input.media ? {attachmentUrl:input.media.url,attachmentName:input.media.name,
       attachmentType:/^(audio|image|video)\//.test(input.media.mime)?input.media.mime.split('/')[0]:'file',
       ...(input.media.voiceNote?{voiceNote:true}:{})}:{}),

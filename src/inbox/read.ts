@@ -11,6 +11,7 @@ export function inboxQueryError(error:{code?:string}|null){
  if(!error)return
  if(error.code==='42501')throw new ApiError(403,'No tenés permiso para esta conversación de Inbox.')
  if(error.code==='PT404')throw new ApiError(404,'No encontramos la conversación o el mensaje de Inbox.')
+ if(error.code==='PT403')throw new ApiError(403,'Este contacto pidió la baja.')
  if(error.code==='PT422')throw new ApiError(422,'La ventana de 24 horas está cerrada o la cuenta está desconectada. Conservá el borrador hasta que el contacto vuelva a escribir.')
  if(error.code==='PT423')throw new ApiError(423,'Hay un envío sin confirmar. Revisalo antes de enviar otro mensaje.')
  if(error.code==='PT409')throw new ApiError(409,'La solicitud ya existe con otro contenido o el estado del envío cambió. Actualizá el chat.')

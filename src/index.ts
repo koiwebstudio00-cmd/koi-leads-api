@@ -36,7 +36,7 @@ const syncChatHistory: SyncChatHistory | undefined = machine && chatProvider ? a
   return { more: page < history.pages }
 } : undefined
 const inboxMachine=config.KOI_INBOX_GATEWAY_DATABASE_URL?createInboxMachine(config.KOI_INBOX_GATEWAY_DATABASE_URL,config.KOI_DATABASE_CA_FILE):undefined
-const inbox=inboxMachine?createInboxService({command:inboxMachine.command,provider:createZernioClient(config.ZERNIO_API_KEY!),
+const inbox=inboxMachine?createInboxService({command:inboxMachine.command,templates:inboxMachine.templates,provider:createZernioClient(config.ZERNIO_API_KEY!),
   workspaceId:config.KOI_ZERNIO_WORKSPACE_ID!,profileId:config.ZERNIO_PROFILE_ID!,origin:config.KOI_APP_ORIGIN}):undefined
 const inboxWebhook=inboxMachine?createInboxWebhook(config.ZERNIO_WEBHOOK_SECRET!,inboxMachine.command):undefined
 const inboxMedia=config.ZERNIO_API_KEY?createInboxReadMedia(createZernioClient(config.ZERNIO_API_KEY),config.ZERNIO_API_KEY):undefined

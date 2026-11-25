@@ -23,5 +23,9 @@ export function createInboxMachine(connection:string,caFile?:string){
     const result = await pool.query<{result:T}>('select koi_private.channel_statistics($1,$2::jsonb) result', [action, JSON.stringify(data)])
     return result.rows[0]!.result
   }
-  return {command,dispatch,reactions,receive,statistics,close:()=>pool.end()}
+  const templates:MachineCommand=async<T>(action:string,data:Record<string,unknown>)=>{
+    const result=await pool.query<{result:T}>('select koi_private.inbox_followup_template($1,$2::jsonb) result',[action,JSON.stringify(data)])
+    return result.rows[0]!.result
+  }
+  return {command,dispatch,reactions,receive,statistics,templates,close:()=>pool.end()}
 }

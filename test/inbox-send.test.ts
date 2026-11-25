@@ -115,3 +115,32 @@ test('HTTP rejects extra recipient/template fields and forwards only validated t
  assert.equal(calls,0)
  await inboxReadRoute(request,url,query,async()=>({text:'Hola'}),undefined,true);assert.equal(calls,1)
 })
+
+test('an approved WhatsApp follow-up uses only the template payload after 24 hours and remains idempotent',async()=>{
+ await db.exec("update koi_inbox_conversations set last_inbound_at=now()-interval '5 days'")
+ await reject(enqueue(),'PT422')
+ const template={name:'seguimiento',language:'es_AR',components:[]}
+ const input={id:f.waChat,actorId:user,requestId:randomUUID(),accountId:'fixture-wa',template,text:'¿Pudiste ver la propuesta?'}
+ const queue=(data:object)=>db.transaction(async tx=>{
+   await tx.exec("update koi_private.inbox_bindings set kind='gateway' where role_name=session_user; set local role koi_inbox_gateway")
+   const result=await tx.query<{message:{id:string}}>("select koi_private.inbox_followup_template('enqueue',$1) message",[JSON.stringify(data)])
+   await tx.exec("reset role; update koi_private.inbox_bindings set kind='ingest' where role_name=session_user")
+   return result.rows[0]!.message
+ })
+ const first=await queue(input)
+ assert.equal((await queue(input)).id,first.id)
+ await reject(queue({...input,template:{...template,name:'otro'}}),'PT409')
+ await reject(queue({...input,id:f.igChat}),'PT404')
+ await reject(queue({...input,actorId:outsider}),'42501')
+ const calls:unknown[]=[]
+ const sender=createInboxTextSender('fixture',async(_url,init)=>{
+   calls.push(JSON.parse(String(init?.body)))
+   return Response.json({success:true,data:{messageId:'template-accepted'}})
+ })
+ const provider={account:async()=>({_id:'fixture-wa',profileId:'profile',platform:'whatsapp',isActive:true})} as unknown as ZernioClient
+ const cycle=createInboxSendCycle(command,provider,sender,{profileId:'profile',workspaceId:w})
+ await cycle();await cycle()
+ assert.deepEqual(calls,[{accountId:'fixture-wa',template:{elements:[template]}}])
+ await reject(enqueue(),'PT422')
+ assert.equal((await db.query<{status:string}>('select status from koi_private.inbox_messages where id=$1',[first.id])).rows[0]?.status,'accepted')
+})

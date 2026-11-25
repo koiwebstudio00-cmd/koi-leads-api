@@ -36,7 +36,7 @@ before(async()=>{
   const dir = new URL('../supabase/migrations/',import.meta.url)
   const files = (await readdir(dir)).filter(file=>file.endsWith('.sql')).sort()
   const migration = files.find(file=>file.endsWith('_koi_channel_statistics.sql'))!
-  for(const file of files.filter(file=>file!==migration)) await db.exec(await readFile(new URL(file,dir),'utf8'))
+  for(const file of files.filter(file=>file<migration)) await db.exec(await readFile(new URL(file,dir),'utf8'))
   await db.query('insert into auth.users values ($1)',[actorId])
   await db.query("insert into koi_workspaces(id,name) values($1,'Koi')",[workspaceId])
   await db.query("insert into koi_workspace_members(workspace_id,user_id,role) values($1,$2,'admin')",[workspaceId,actorId])
@@ -44,7 +44,7 @@ before(async()=>{
   await seedInbox(db,workspaceId,actorId)
   await db.query("update koi_private.inbox_messages set sent_at='2026-11-06T18:24:00Z' where account_id=$1 and external_id='live'",[f.wa])
   await messageEvent('already-in-inbox',{metadata})
-  await db.exec(await readFile(new URL(migration,dir),'utf8'))
+  for(const file of files.filter(file=>file>=migration)) await db.exec(await readFile(new URL(file,dir),'utf8'))
 })
 after(()=>db.close())
 

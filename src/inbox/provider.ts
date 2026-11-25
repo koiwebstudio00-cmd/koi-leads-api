@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { templateCatalog, followupTemplates } from './templates.ts'
 import { normalizeReaction } from './reactions.ts'
 
 const id=z.string().min(1).max(200)
@@ -85,6 +86,9 @@ export function createZernioClient(apiKey:string,fetcher:typeof fetch=fetch) {
   return {
     attachment:(lookup:{accountId:string;conversationId:string;messageId:string;index:number})=>get('inbox/conversations/'+encodeURIComponent(lookup.conversationId)+'/messages/'+encodeURIComponent(lookup.messageId)+'/attachments/'+lookup.index,z.object({url:z.url()}),{accountId:lookup.accountId,format:'json'}),
     account, connect,
+    async approvedTemplates(accountId:string) {
+      return followupTemplates(await get('whatsapp/templates',templateCatalog,{accountId,status:'APPROVED'}))
+    },
     async instagramContact(accountId:string,conversationId:string) {
       const {data}=await get('inbox/conversations/'+encodeURIComponent(conversationId),z.object({
         data:z.object({id,accountId:id,platform:z.literal('instagram'),participantId:id,

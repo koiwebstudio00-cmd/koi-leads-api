@@ -1,3 +1,5 @@
+import { templateSelection, prepareTemplate } from './templates.ts'
+import { inboxQueryError } from './read.ts'
 import { createHash,randomBytes } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import { z } from 'zod'
@@ -13,7 +15,7 @@ export function safeConnectUrl(value:string){
   if(url.protocol!=='https:'||(url.port!==''&&url.port!=='443')||url.username||url.password||!['zernio.com','www.facebook.com','facebook.com','www.instagram.com','api.instagram.com','instagram.com'].includes(url.hostname))throw new ApiError(503,'Zernio devolvió un destino de conexión no válido.')
   return url.toString()
 }
-export function createInboxService(options:{workspaceId:string;profileId:string;origin:string;command:MachineCommand;provider:ZernioClient}){
+export function createInboxService(options:{workspaceId:string;profileId:string;origin:string;command:MachineCommand;templates?:MachineCommand;provider:ZernioClient}){
   const {provider,profileId,workspaceId}=options
   const command:MachineCommand=async<T>(action:string,data:Record<string,unknown>)=>{
     try{return await options.command<T>(action,data)}catch(error){
@@ -29,7 +31,30 @@ export function createInboxService(options:{workspaceId:string;profileId:string;
     if(binding.workspaceId!==workspaceId||binding.profileId!==profileId)throw new ApiError(503,'La conexión Inbox necesita revisar su configuración.')
   }
   return async(request:IncomingMessage,url:URL,store:UserStore,body:()=>Promise<unknown>)=>{
-    await scoped(store,request.method!=='GET')
+    const templatesRoute=/^\/api\/inbox\/conversations\/([^/]+)\/templates$/.exec(url.pathname)
+    await scoped(store,!templatesRoute && request.method!=='GET')
+    if (templatesRoute && (request.method==='GET' || request.method==='POST')) {
+      if (!options.templates) throw new ApiError(503,'Las plantillas no están disponibles.')
+      const context={id:z.uuid().parse(templatesRoute[1]),actorId:store.userId}
+      async function templateCommand<T>(action:string,data:Record<string,unknown>) {
+        try { return await options.templates!<T>(action,{...context,...data}) }
+        catch (error) {
+          const code=(error as {code?:string}).code
+          if (code==='PT422') throw new ApiError(422,'Reconectá la cuenta de WhatsApp para enviar plantillas.')
+          inboxQueryError({code})
+          throw error
+        }
+      }
+      const locator=await templateCommand<{accountId:string}>('lookup',{})
+      const account=await provider.account(locator.accountId)
+      if (account._id!==locator.accountId || accountRecord(account,profileId).state!=='connected' || account.platform!=='whatsapp')
+        throw new ApiError(422,'Reconectá la cuenta de WhatsApp para enviar plantillas.')
+      const catalog=await provider.approvedTemplates(locator.accountId)
+      if (request.method==='GET') return catalog
+      const selection=templateSelection.parse(await body())
+      const requestId=z.uuid().parse(request.headers['idempotency-key'])
+      return templateCommand('enqueue',{...prepareTemplate(catalog.templates,selection),accountId:locator.accountId,requestId})
+    }
     const profileRoute=/^\/api\/inbox\/conversations\/([^/]+)\/instagram-profile$/.exec(url.pathname)
     if(profileRoute && request.method==='GET'){
       if(!store.inbox)throw new ApiError(503,'Inbox no disponible.')
